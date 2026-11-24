@@ -1,0 +1,15 @@
+schema: req.claim/4
+claim_id: REQ-0007
+statement: "The HTTP API shall enforce constant-time Bearer token authentication, fail safe when unconfigured, and map domain errors to HTTP status codes."
+applicability: []
+relations: []
+rationale:
+  source: "AGENTS.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/httpapi::TestAuth_RejectsUnauthorizedAndEmptyConfig"
+  - "github.com/autox-my/mill/internal/httpapi::TestSlices_CreateAndListFilters"
+  - "github.com/autox-my/mill/internal/httpapi::TestSlices_ClaimRenewUpdateAndErrors"
+  - "github.com/autox-my/mill/internal/httpapi::TestRuns_AndStats"

@@ -1,0 +1,15 @@
+schema: req.claim/4
+claim_id: REQ-0006
+statement: "The MCP server shall expose list_slices, claim_slice, renew_lease, update_slice, and record_run over stdio JSON-RPC 2.0 with standard protocol error codes and domain error reporting."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/mcp::TestMCP_LifecycleAndToolsList"
+  - "github.com/autox-my/mill/internal/mcp::TestMCP_SliceWorkflowAndDomainErrors"
+  - "github.com/autox-my/mill/internal/mcp::TestMCP_JSONRPCErrorCodes"
+  - "github.com/autox-my/mill/internal/mcp::TestMCP_InternalError"

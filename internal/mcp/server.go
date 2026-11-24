@@ -31,6 +31,8 @@ const (
 
 // Store defines the narrow persistence contract required by the MCP server.
 type Store interface {
+	CreateSlice(ctx context.Context, sl domain.Slice) error
+	GetSlice(ctx context.Context, id string) (domain.Slice, error)
 	ListSlices(ctx context.Context, stateFilter string) ([]domain.Slice, error)
 	ClaimSlice(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)
 	RenewLease(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)

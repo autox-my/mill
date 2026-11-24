@@ -126,10 +126,11 @@ func TestMCP_LifecycleAndToolsList(t *testing.T) {
 	if err := json.Unmarshal(resps[1].Result, &listRes); err != nil {
 		t.Fatalf("unmarshal tools/list: %v", err)
 	}
-	if len(listRes.Tools) != 5 {
-		t.Fatalf("expected 5 tools, got %d", len(listRes.Tools))
+	if len(listRes.Tools) != 6 {
+		t.Fatalf("expected 6 tools, got %d", len(listRes.Tools))
 	}
 	want := map[string]bool{
+		"create_slice": false,
 		"list_slices":  false,
 		"claim_slice":  false,
 		"renew_lease":  false,
@@ -255,6 +256,12 @@ func TestMCP_JSONRPCErrorCodes(t *testing.T) {
 
 type failingStore struct{}
 
+func (failingStore) CreateSlice(context.Context, domain.Slice) error {
+	return errors.New("db connection lost")
+}
+func (failingStore) GetSlice(context.Context, string) (domain.Slice, error) {
+	return domain.Slice{}, errors.New("db connection lost")
+}
 func (failingStore) ListSlices(context.Context, string) ([]domain.Slice, error) {
 	return nil, errors.New("db connection lost")
 }
@@ -276,5 +283,31 @@ func TestMCP_InternalError(t *testing.T) {
 	resps := runRPC(t, srv, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_slices","arguments":{}}}`)
 	if len(resps) != 1 || resps[0].Error == nil || resps[0].Error.Code != -32603 {
 		t.Fatalf("expected -32603 internal error, got %+v", resps)
+	}
+}
+
+func TestMCP_CreateSlice(t *testing.T) {
+	st := openTestStore(t)
+	srv := mcp.NewServer(st)
+
+	resps := runRPC(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_slice","arguments":{"slice_id":"S-99","repo":"autox-my/mill","title":"Created via MCP","claims":["REQ-0006"],"branch":"feature/s-99"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_slice","arguments":{"slice_id":"S-99","repo":"autox-my/mill","title":"Duplicate"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_slice","arguments":{"slice_id":"S-100","repo":"autox-my/mill"}}}`,
+	)
+	if len(resps) != 3 {
+		t.Fatalf("expected 3 responses, got %d", len(resps))
+	}
+
+	r1 := decodeToolResult(t, resps[0])
+	if r1.IsError || !strings.Contains(r1.Content[0].Text, `"id":"S-99"`) {
+		t.Fatalf("expected created slice S-99, got %+v", r1)
+	}
+	r2 := decodeToolResult(t, resps[1])
+	if !r2.IsError || !strings.Contains(r2.Content[0].Text, "already exists") {
+		t.Fatalf("expected duplicate domain error, got %+v", r2)
+	}
+	if resps[2].Error == nil || resps[2].Error.Code != -32602 {
+		t.Fatalf("expected -32602 for missing title, got %+v", resps[2].Error)
 	}
 }

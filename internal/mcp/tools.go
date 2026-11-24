@@ -37,6 +37,19 @@ type callToolResult struct {
 func (s *Server) buildTools() []toolDef {
 	return []toolDef{
 		{
+			Name:        "create_slice",
+			Description: "Create a new work slice on the mill board.",
+			InputSchema: objectSchema(map[string]any{
+				"slice_id":    stringProp("Unique slice identifier (e.g. S-01)"),
+				"repo":        stringProp("Repository name (e.g. autox-my/mill)"),
+				"title":       stringProp("Short imperative slice title"),
+				"claims":      stringArrayProp("Optional list of req claim IDs"),
+				"branch":      stringProp("Optional git branch name"),
+				"intent_lock": stringProp("Optional intent lock path (e.g. .intent/...)"),
+			}, []string{"slice_id", "repo", "title"}),
+			call: s.callCreateSlice,
+		},
+		{
 			Name:        "list_slices",
 			Description: "List work slices on the mill board, optionally filtered by state.",
 			InputSchema: objectSchema(map[string]any{
@@ -140,6 +153,41 @@ func isDomainError(err error) bool {
 		errors.Is(err, domain.ErrNotLeaseOwner) ||
 		errors.Is(err, domain.ErrInvalidTransition) ||
 		errors.Is(err, domain.ErrInvalidInput)
+}
+
+func (s *Server) callCreateSlice(ctx context.Context, raw json.RawMessage) (any, error) {
+	var args struct {
+		SliceID    string   `json:"slice_id"`
+		Repo       string   `json:"repo"`
+		Title      string   `json:"title"`
+		Claims     []string `json:"claims"`
+		Branch     string   `json:"branch"`
+		IntentLock string   `json:"intent_lock"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmpty("slice_id", args.SliceID); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmpty("repo", args.Repo); err != nil {
+		return nil, err
+	}
+	if err := requireNonEmpty("title", args.Title); err != nil {
+		return nil, err
+	}
+	sl := domain.Slice{
+		ID:         args.SliceID,
+		Repo:       args.Repo,
+		Title:      args.Title,
+		Claims:     args.Claims,
+		Branch:     args.Branch,
+		IntentLock: args.IntentLock,
+	}
+	if err := s.store.CreateSlice(ctx, sl); err != nil {
+		return nil, err
+	}
+	return s.store.GetSlice(ctx, args.SliceID)
 }
 
 func (s *Server) callListSlices(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -298,4 +346,12 @@ func stringProp(desc string) map[string]any {
 
 func intProp(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
+}
+
+func stringArrayProp(desc string) map[string]any {
+	return map[string]any{
+		"type":        "array",
+		"items":       map[string]any{"type": "string"},
+		"description": desc,
+	}
 }

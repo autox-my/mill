@@ -4,24 +4,62 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/autox-my/mill/internal/domain"
+	"github.com/autox-my/mill/internal/httpapi"
+	"github.com/autox-my/mill/internal/ingest"
+	"github.com/autox-my/mill/internal/mcp"
+	"github.com/autox-my/mill/internal/observer"
 	"github.com/autox-my/mill/internal/store"
 )
 
-const defaultDBPath = ".mill/mill.db"
+const (
+	defaultDBPath   = ".mill/mill.db"
+	defaultHTTPAddr = "127.0.0.1:8080"
+)
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithIO(args, os.Stdin, stdout, stderr)
+}
+
+type commandFunc func(dbPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int
+
+func commandTable() map[string]commandFunc {
+	return map[string]commandFunc{
+		"init": func(dbPath string, _ []string, _ io.Reader, stdout, stderr io.Writer) int {
+			return cmdInit(dbPath, stdout, stderr)
+		},
+		"slice": func(dbPath string, args []string, _ io.Reader, stdout, stderr io.Writer) int {
+			return cmdSlice(dbPath, args, stdout, stderr)
+		},
+		"run": func(dbPath string, args []string, _ io.Reader, stdout, stderr io.Writer) int {
+			return cmdRun(dbPath, args, stdout, stderr)
+		},
+		"stats": func(dbPath string, args []string, _ io.Reader, stdout, stderr io.Writer) int {
+			return cmdStats(dbPath, args, stdout, stderr)
+		},
+		"mcp":     cmdMCP,
+		"serve":   cmdServe,
+		"ingest":  cmdIngest,
+		"improve": cmdImprove,
+	}
+}
+
+func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	dbPath, rest, err := extractDBFlag(args)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
@@ -31,24 +69,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return 2
 	}
-
-	switch rest[0] {
-	case "-h", "--help", "help":
+	if rest[0] == "-h" || rest[0] == "--help" || rest[0] == "help" {
 		printUsage(stdout)
 		return 0
-	case "init":
-		return cmdInit(dbPath, stdout, stderr)
-	case "slice":
-		return cmdSlice(dbPath, rest[1:], stdout, stderr)
-	case "run":
-		return cmdRun(dbPath, rest[1:], stdout, stderr)
-	case "stats":
-		return cmdStats(dbPath, rest[1:], stdout, stderr)
-	default:
+	}
+	fn, ok := commandTable()[rest[0]]
+	if !ok {
 		fmt.Fprintf(stderr, "unknown command %q\n", rest[0])
 		printUsage(stderr)
 		return 2
 	}
+	return fn(dbPath, rest[1:], stdin, stdout, stderr)
 }
 
 func extractDBFlag(args []string) (string, []string, error) {
@@ -76,7 +107,7 @@ func extractDBFlag(args []string) (string, []string, error) {
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "usage: mill [--db <path>] <init|slice|run|stats>")
+	fmt.Fprintln(w, "usage: mill [--db <path>] <init|slice|run|stats|mcp|serve|ingest|improve>")
 }
 
 func openStore(dbPath string, stderr io.Writer) (*store.Store, bool) {
@@ -357,6 +388,187 @@ func cmdStats(dbPath string, args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "slices: %d | runs: %d (GREEN=%d, RED=%d) | amendments: %d | findings: %d\n",
 		summary.TotalSlices, summary.TotalRuns, summary.GreenRuns, summary.RedRuns, summary.TotalAmendments, summary.TotalFindings)
 	return 0
+}
+
+func cmdMCP(dbPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := newFlagSet("mcp", stderr)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	st, ok := openStore(dbPath, stderr)
+	if !ok {
+		return 1
+	}
+	defer st.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := mcp.NewServer(st)
+	if err := srv.Serve(ctx, stdin, stdout); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintf(stderr, "mcp: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func cmdServe(dbPath string, args []string, _ io.Reader, stdout, stderr io.Writer) int {
+	fs := newFlagSet("serve", stderr)
+	defaultAddr := strings.TrimSpace(os.Getenv("MILL_ADDR"))
+	if defaultAddr == "" {
+		defaultAddr = defaultHTTPAddr
+	}
+	addr := fs.String("addr", defaultAddr, "HTTP listen address")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	token := strings.TrimSpace(os.Getenv("MILL_API_TOKEN"))
+	if token == "" {
+		fmt.Fprintln(stderr, "serve: MILL_API_TOKEN is required")
+		return 1
+	}
+	st, ok := openStore(dbPath, stderr)
+	if !ok {
+		return 1
+	}
+	defer st.Close()
+
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           httpapi.NewHandler(st, token),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	fmt.Fprintf(stdout, "listening on %s\n", *addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func cmdIngest(dbPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	fs := newFlagSet("ingest", stderr)
+	source := fs.String("source", "", "source format (intentgate|req-diff|check)")
+	sliceID := fs.String("slice", "", "slice id")
+	harness := fs.String("harness", "", "harness name")
+	model := fs.String("model", "", "model name")
+	phase := fs.String("phase", "verify", "sdls phase")
+	duration := fs.Int("duration", 0, "duration seconds")
+	filePath := fs.String("file", "", "optional input file path (defaults to stdin)")
+	dryRun := fs.Bool("dry-run", false, "parse and print JSON without writing to store")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	raw, err := readIngestInput(*filePath, stdin)
+	if err != nil {
+		fmt.Fprintf(stderr, "ingest: %v\n", err)
+		return 1
+	}
+	ev, err := ingest.Parse(*source, ingest.Meta{
+		SliceID:     *sliceID,
+		Harness:     *harness,
+		Model:       *model,
+		Phase:       *phase,
+		DurationSec: *duration,
+	}, raw)
+	if err != nil {
+		fmt.Fprintf(stderr, "ingest: %v\n", err)
+		return 1
+	}
+	if *dryRun {
+		return writeJSON(stdout, stderr, ev)
+	}
+	return persistRunEvent(dbPath, ev, stdout, stderr)
+}
+
+func readIngestInput(filePath string, stdin io.Reader) ([]byte, error) {
+	if strings.TrimSpace(filePath) != "" {
+		return os.ReadFile(filePath)
+	}
+	return io.ReadAll(stdin)
+}
+
+func persistRunEvent(dbPath string, ev domain.RunEvent, stdout, stderr io.Writer) int {
+	st, ok := openStore(dbPath, stderr)
+	if !ok {
+		return 1
+	}
+	defer st.Close()
+
+	recorded, err := st.RecordRun(context.Background(), ev)
+	if err != nil {
+		fmt.Fprintf(stderr, "ingest record: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "recorded run #%d for %s (%s %s)\n", recorded.ID, recorded.SliceID, recorded.Phase, recorded.Verdict)
+	return 0
+}
+
+func cmdImprove(dbPath string, args []string, _ io.Reader, stdout, stderr io.Writer) int {
+	fs := newFlagSet("improve", stderr)
+	sliceID := fs.String("slice", "", "optional slice id filter")
+	limit := fs.Int("limit", 100, "max run events to analyze")
+	reportOnly := fs.Bool("report-only", false, "output ledger analysis JSON without calling LLM")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	report, ok := buildObserverReport(dbPath, *sliceID, *limit, stderr)
+	if !ok {
+		return 1
+	}
+	if *reportOnly {
+		return writeJSON(stdout, stderr, report)
+	}
+
+	cfg, err := observer.LoadConfigFromEnv()
+	if err != nil {
+		fmt.Fprintf(stderr, "improve: %v\n", err)
+		return 1
+	}
+	client, err := observer.NewClient(cfg)
+	if err != nil {
+		fmt.Fprintf(stderr, "improve: %v\n", err)
+		return 1
+	}
+	prop, err := client.Propose(context.Background(), report)
+	if err != nil {
+		fmt.Fprintf(stderr, "improve: %v\n", err)
+		return 1
+	}
+	return writeJSON(stdout, stderr, prop)
+}
+
+func buildObserverReport(dbPath, sliceID string, limit int, stderr io.Writer) (observer.Report, bool) {
+	st, ok := openStore(dbPath, stderr)
+	if !ok {
+		return observer.Report{}, false
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	runs, err := st.ListRuns(ctx, sliceID, limit)
+	if err != nil {
+		fmt.Fprintf(stderr, "improve list runs: %v\n", err)
+		return observer.Report{}, false
+	}
+	slices, err := st.ListSlices(ctx, "")
+	if err != nil {
+		fmt.Fprintf(stderr, "improve list slices: %v\n", err)
+		return observer.Report{}, false
+	}
+	return observer.AnalyzeWithSlices(runs, slices), true
 }
 
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {

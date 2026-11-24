@@ -34,7 +34,7 @@ fi
 systemctl daemon-reload
 systemctl enable --now mill.service
 
-if command -v tailscale >/dev/null 2>&1; then
+if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
   tailscale serve --bg 127.0.0.1:8080
 fi
 

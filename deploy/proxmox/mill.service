@@ -1,0 +1,27 @@
+[Unit]
+Description=mill headless slice board and run ledger
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mill
+Group=mill
+StateDirectory=mill
+EnvironmentFile=/etc/mill/mill.env
+ExecStart=/usr/local/bin/mill serve
+Restart=on-failure
+RestartSec=3
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

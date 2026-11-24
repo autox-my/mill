@@ -1,0 +1,15 @@
+schema: req.claim/4
+claim_id: REQ-0008
+statement: "The ingest package shall parse intentgate verify JSON, req diff, and scripts/check.sh outputs into validated RunEvent records and reject malformed inputs."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/ingest::TestParseIntentGateJSON_GreenNoLock"
+  - "github.com/autox-my/mill/internal/ingest::TestParseReqDiff_TextDirections"
+  - "github.com/autox-my/mill/internal/ingest::TestParseCheckOutput_GreenAndRed"
+  - "github.com/autox-my/mill/internal/ingest::TestParse_Dispatcher"

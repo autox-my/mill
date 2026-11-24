@@ -226,3 +226,21 @@ func TestCLI_ImproveSubcommand(t *testing.T) {
 		t.Fatalf("unexpected proposal json: err=%v out=%s", err, out)
 	}
 }
+
+func TestCLI_HelpAndErrorPaths(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "mill.db")
+
+	if code, out, _ := runCLI(t, dbPath, "--help"); code != 0 || !strings.Contains(out, "improve") {
+		t.Fatalf("expected help output, got code=%d out=%s", code, out)
+	}
+	if code, _, errOut := runCLI(t, dbPath, "unknown-cmd"); code != 2 || !strings.Contains(errOut, "unknown command") {
+		t.Fatalf("expected unknown command exit 2, got code=%d err=%s", code, errOut)
+	}
+	if code, _, _ := runCLI(t, dbPath, "ingest", "--source", "bogus", "--slice", "S-1", "--harness", "ci"); code != 1 {
+		t.Fatalf("expected bogus ingest source to fail, got code=%d", code)
+	}
+	t.Setenv("MILL_LLM_BASE_URL", "")
+	if code, _, _ := runCLI(t, dbPath, "improve"); code != 1 {
+		t.Fatalf("expected improve without LLM config to fail, got code=%d", code)
+	}
+}

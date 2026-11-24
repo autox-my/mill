@@ -11,7 +11,9 @@ import (
 	"testing"
 
 	"github.com/autox-my/mill/internal/domain"
+	"github.com/autox-my/mill/internal/httpapi"
 	"github.com/autox-my/mill/internal/observer"
+	"github.com/autox-my/mill/internal/store"
 )
 
 func runCLI(t *testing.T, dbPath string, args ...string) (int, string, string) {
@@ -242,5 +244,38 @@ func TestCLI_HelpAndErrorPaths(t *testing.T) {
 	t.Setenv("MILL_LLM_BASE_URL", "")
 	if code, _, _ := runCLI(t, dbPath, "improve"); code != 1 {
 		t.Fatalf("expected improve without LLM config to fail, got code=%d", code)
+	}
+}
+
+func TestCLI_RemoteHTTPBackend(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "remote.db")
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+
+	srv := httptest.NewServer(httpapi.NewHandler(st, "remote-secret"))
+	defer srv.Close()
+
+	t.Setenv("MILL_URL", srv.URL)
+	t.Setenv("MILL_API_TOKEN", "remote-secret")
+
+	if code, _, errOut := runCLI(t, "", "slice", "create", "--id", "S-40", "--repo", "autox-my/mill", "--title", "Remote slice"); code != 0 {
+		t.Fatalf("remote slice create failed: %s", errOut)
+	}
+	code, out, errOut := runCLI(t, "", "slice", "list", "--json")
+	if code != 0 || !strings.Contains(out, "S-40") {
+		t.Fatalf("remote slice list failed (%d): %s %s", code, out, errOut)
+	}
+	code, out, errOut = runCLI(t, "", "stats", "--json")
+	if code != 0 || !strings.Contains(out, `"total_slices": 1`) {
+		t.Fatalf("remote stats failed (%d): %s %s", code, out, errOut)
+	}
+
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_slices","arguments":{}}}` + "\n"
+	code, out, errOut = runCLIWithStdin(t, "", req, "mcp")
+	if code != 0 || !strings.Contains(out, "S-40") {
+		t.Fatalf("remote mcp failed (%d): %s %s", code, out, errOut)
 	}
 }

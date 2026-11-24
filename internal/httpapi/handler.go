@@ -59,6 +59,7 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /slices", s.handleListSlices)
+	mux.HandleFunc("GET /slices/{id}", s.handleGetSlice)
 	mux.HandleFunc("POST /slices", s.handleCreateSlice)
 	mux.HandleFunc("POST /slices/{id}/claim", s.handleClaimSlice)
 	mux.HandleFunc("POST /slices/{id}/renew", s.handleRenewLease)
@@ -103,6 +104,15 @@ func (s *server) handleListSlices(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) handleGetSlice(w http.ResponseWriter, r *http.Request) {
+	sl, err := s.store.GetSlice(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sl)
 }
 
 func (s *server) handleCreateSlice(w http.ResponseWriter, r *http.Request) {

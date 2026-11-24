@@ -1,0 +1,12 @@
+schema: req.claim/4
+claim_id: REQ-0010
+statement: "The HTTP client shall authenticate requests with a Bearer token and round-trip slice, lease, run ledger, and stats operations against the HTTP API."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/httpclient::TestHTTPClient_RoundTripAndErrors"

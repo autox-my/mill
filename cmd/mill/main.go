@@ -17,6 +17,7 @@ import (
 
 	"github.com/autox-my/mill/internal/domain"
 	"github.com/autox-my/mill/internal/httpapi"
+	"github.com/autox-my/mill/internal/httpclient"
 	"github.com/autox-my/mill/internal/ingest"
 	"github.com/autox-my/mill/internal/mcp"
 	"github.com/autox-my/mill/internal/observer"
@@ -110,7 +111,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: mill [--db <path>] <init|slice|run|stats|mcp|serve|ingest|improve>")
 }
 
-func openStore(dbPath string, stderr io.Writer) (*store.Store, bool) {
+type millStore interface {
+	httpapi.Store
+	Close() error
+}
+
+func openLocalStore(dbPath string, stderr io.Writer) (*store.Store, bool) {
 	st, err := store.Open(dbPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "open store: %v\n", err)
@@ -119,8 +125,20 @@ func openStore(dbPath string, stderr io.Writer) (*store.Store, bool) {
 	return st, true
 }
 
+func openStore(dbPath string, stderr io.Writer) (millStore, bool) {
+	if baseURL := strings.TrimSpace(os.Getenv("MILL_URL")); baseURL != "" {
+		c, err := httpclient.New(baseURL, os.Getenv("MILL_API_TOKEN"))
+		if err != nil {
+			fmt.Fprintf(stderr, "open remote store: %v\n", err)
+			return nil, false
+		}
+		return c, true
+	}
+	return openLocalStore(dbPath, stderr)
+}
+
 func cmdInit(dbPath string, stdout, stderr io.Writer) int {
-	st, ok := openStore(dbPath, stderr)
+	st, ok := openLocalStore(dbPath, stderr)
 	if !ok {
 		return 1
 	}
@@ -427,7 +445,7 @@ func cmdServe(dbPath string, args []string, _ io.Reader, stdout, stderr io.Write
 		fmt.Fprintln(stderr, "serve: MILL_API_TOKEN is required")
 		return 1
 	}
-	st, ok := openStore(dbPath, stderr)
+	st, ok := openLocalStore(dbPath, stderr)
 	if !ok {
 		return 1
 	}

@@ -118,6 +118,15 @@ func TestSlices_CreateAndListFilters(t *testing.T) {
 		t.Fatalf("unexpected created slice: %+v", created)
 	}
 
+	rec = doReq(t, h, http.MethodGet, "/slices/SL-1", auth, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get SL-1: got %d, want 200", rec.Code)
+	}
+	rec = doReq(t, h, http.MethodGet, "/slices/MISSING", auth, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("get MISSING: got %d, want 404", rec.Code)
+	}
+
 	rec = doReq(t, h, http.MethodPost, "/slices", auth, s2)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create s2: got %d, want 201", rec.Code)

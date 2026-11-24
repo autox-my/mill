@@ -88,12 +88,12 @@ func resolveIntentGateVerdict(report intentGateReport, findings int) (domain.Ver
 	}
 
 	switch strings.ToLower(strings.TrimSpace(report.Outcome)) {
-	case "green", "pass", "passed", "ok", "no-lock":
+	case "clean", "skipped", "green", "pass", "passed", "ok", "no-lock":
 		if findings > 0 || report.ExitCode != 0 {
 			return domain.VerdictRed, nil
 		}
 		return domain.VerdictGreen, nil
-	case "red", "fail", "failed", "violation", "blocked":
+	case "findings", "red", "fail", "failed", "violation", "blocked":
 		return domain.VerdictRed, nil
 	case "undecidable", "unverifiable", "unknown", "error":
 		return domain.VerdictUndecidable, nil

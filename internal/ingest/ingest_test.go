@@ -46,6 +46,52 @@ func TestParseIntentGateJSON_GreenNoLock(t *testing.T) {
 	}
 }
 
+func TestParseIntentGateJSON_RealOutcomes(t *testing.T) {
+	cases := []struct {
+		name         string
+		raw          string
+		wantVerdict  domain.Verdict
+		wantFindings int
+	}{
+		{
+			name:        "clean",
+			raw:         `{"outcome":"clean","exit_code":0,"problems":[],"locks":[],"findings":[]}`,
+			wantVerdict: domain.VerdictGreen,
+		},
+		{
+			name:        "skipped",
+			raw:         `{"outcome":"skipped","exit_code":0,"problems":[],"locks":[],"findings":[]}`,
+			wantVerdict: domain.VerdictGreen,
+		},
+		{
+			name:         "findings",
+			raw:          `{"outcome":"findings","exit_code":1,"problems":[],"locks":[],"findings":[{"path":"README.md"}]}`,
+			wantVerdict:  domain.VerdictRed,
+			wantFindings: 1,
+		},
+		{
+			name:        "unverifiable",
+			raw:         `{"outcome":"unverifiable","exit_code":3,"problems":["bad config"],"locks":[],"findings":[]}`,
+			wantVerdict: domain.VerdictUndecidable,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ev, err := ParseIntentGateJSON(validMeta(), []byte(tc.raw))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ev.Verdict != tc.wantVerdict {
+				t.Fatalf("got verdict %q, want %q", ev.Verdict, tc.wantVerdict)
+			}
+			if ev.FootprintFindings != tc.wantFindings {
+				t.Fatalf("got findings %d, want %d", ev.FootprintFindings, tc.wantFindings)
+			}
+		})
+	}
+}
+
 func TestParseIntentGateJSON_RedWithFindingsAndAmendments(t *testing.T) {
 	raw := []byte(`{
 		"schema": "intentgate.verify/1",

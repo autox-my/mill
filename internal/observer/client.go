@@ -199,30 +199,28 @@ func validateNoProtectedPaths(p Proposal) error {
 func extractDiffPaths(diff string) []string {
 	var paths []string
 	for _, line := range strings.Split(diff, "\n") {
-		if p, ok := parseDiffHeaderLine(line); ok {
-			paths = append(paths, p)
-		}
+		paths = append(paths, parseDiffHeaderPaths(line)...)
 	}
 	return paths
 }
 
-func parseDiffHeaderLine(line string) (string, bool) {
+func parseDiffHeaderPaths(line string) []string {
 	switch {
 	case strings.HasPrefix(line, "--- "):
-		return strings.TrimSpace(strings.TrimPrefix(line, "--- ")), true
+		return []string{strings.TrimSpace(strings.TrimPrefix(line, "--- "))}
 	case strings.HasPrefix(line, "+++ "):
-		return strings.TrimSpace(strings.TrimPrefix(line, "+++ ")), true
+		return []string{strings.TrimSpace(strings.TrimPrefix(line, "+++ "))}
 	case strings.HasPrefix(line, "diff --git "):
 		fields := strings.Fields(line)
 		if len(fields) >= 4 {
-			return fields[3], true
+			return []string{fields[2], fields[3]}
 		}
 	case strings.HasPrefix(line, "rename from "):
-		return strings.TrimSpace(strings.TrimPrefix(line, "rename from ")), true
+		return []string{strings.TrimSpace(strings.TrimPrefix(line, "rename from "))}
 	case strings.HasPrefix(line, "rename to "):
-		return strings.TrimSpace(strings.TrimPrefix(line, "rename to ")), true
+		return []string{strings.TrimSpace(strings.TrimPrefix(line, "rename to "))}
 	}
-	return "", false
+	return nil
 }
 
 func isProtectedPath(raw string) bool {

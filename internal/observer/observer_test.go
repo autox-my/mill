@@ -323,6 +323,11 @@ func TestPropose_RejectsProtectedPaths(t *testing.T) {
 			targetFiles: []string{"claims/REQ-0002.yml"},
 			diff:        "--- a/internal/store/sqlite.go\n+++ b/internal/store/sqlite.go\n@@ -1 +1 @@\n-a\n+b\n",
 		},
+		{
+			name:        "diff --git source path targets claims",
+			targetFiles: []string{"README.md"},
+			diff:        "diff --git a/claims/REQ-0001.yml b/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-a\n+b\n",
+		},
 	}
 
 	for _, tc := range cases {

@@ -1,0 +1,12 @@
+schema: req.claim/4
+claim_id: REQ-0004
+statement: "The store shall reject invalid slice state transitions when updating a slice state."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/store::TestStore_UpdateSliceStateValidation"

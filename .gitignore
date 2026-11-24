@@ -1,0 +1,6 @@
+build/
+.mill/
+*.db
+*.db-wal
+*.db-shm
+/mill

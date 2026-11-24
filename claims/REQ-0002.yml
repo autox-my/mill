@@ -1,0 +1,12 @@
+schema: req.claim/4
+claim_id: REQ-0002
+statement: "The store shall assign the lease to a new owner when claiming a slice whose prior lease has expired."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/store::TestStore_ClaimExpiredLeaseTakeover"

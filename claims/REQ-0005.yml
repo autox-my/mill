@@ -1,0 +1,12 @@
+schema: req.claim/4
+claim_id: REQ-0005
+statement: "The store shall persist recorded run events in the run ledger and return them when queried by slice ID."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/store::TestStore_RunLedgerAndStats"

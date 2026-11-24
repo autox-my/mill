@@ -1,0 +1,12 @@
+schema: req.claim/4
+claim_id: REQ-0001
+statement: "The store shall reject a claim on a slice with an active unexpired lease held by another owner without modifying the lease."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/store::TestStore_ClaimExclusiveLease"

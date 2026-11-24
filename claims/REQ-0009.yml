@@ -1,0 +1,14 @@
+schema: req.claim/4
+claim_id: REQ-0009
+statement: "The observer shall ground every Draft PR proposal in at least one exact slice_id from the analyzed run ledger and reject any proposal targeting claims/ or .intent/."
+applicability: []
+relations: []
+rationale:
+  source: "AGENTS.md"
+  date: 2026-11-24
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/observer::TestPropose_GroundedSuccess"
+  - "github.com/autox-my/mill/internal/observer::TestPropose_RejectsUngrounded"
+  - "github.com/autox-my/mill/internal/observer::TestPropose_RejectsProtectedPaths"

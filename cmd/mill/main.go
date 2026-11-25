@@ -478,6 +478,7 @@ func cmdIngest(dbPath string, args []string, stdin io.Reader, stdout, stderr io.
 	fs := newFlagSet("ingest", stderr)
 	source := fs.String("source", "", "source format (intentgate|req-diff|check)")
 	sliceID := fs.String("slice", "", "slice id")
+	branch := fs.String("branch", "", "optional git branch to extract slice id (e.g. feature/s-01-foo -> S-01)")
 	harness := fs.String("harness", "", "harness name")
 	model := fs.String("model", "", "model name")
 	phase := fs.String("phase", "verify", "sdls phase")
@@ -493,8 +494,9 @@ func cmdIngest(dbPath string, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintf(stderr, "ingest: %v\n", err)
 		return 1
 	}
+	resolvedSlice := ingest.ResolveSliceID(*sliceID, *branch)
 	ev, err := ingest.Parse(*source, ingest.Meta{
-		SliceID:     *sliceID,
+		SliceID:     resolvedSlice,
 		Harness:     *harness,
 		Model:       *model,
 		Phase:       *phase,

@@ -18,6 +18,39 @@ func validMeta() Meta {
 	}
 }
 
+func TestExtractAndResolveSliceID(t *testing.T) {
+	cases := []struct {
+		branch string
+		want   string
+		ok     bool
+	}{
+		{"feature/s-01-slice-board", "S-01", true},
+		{"fix/S-29-eval-calibration", "S-29", true},
+		{"s-12", "S-12", true},
+		{"main", "", false},
+		{"feature/no-slice-id", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := ExtractSliceIDFromBranch(tc.branch)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("ExtractSliceIDFromBranch(%q) = (%q, %v), want (%q, %v)", tc.branch, got, ok, tc.want, tc.ok)
+		}
+	}
+
+	if got := ResolveSliceID("S-05", "feature/s-99-ignored"); got != "S-05" {
+		t.Errorf("explicit sliceID should win, got %q", got)
+	}
+	if got := ResolveSliceID("feature/s-07-foo", ""); got != "S-07" {
+		t.Errorf("branch passed in sliceID should extract S-07, got %q", got)
+	}
+	if got := ResolveSliceID("", "feature/s-14-bar"); got != "S-14" {
+		t.Errorf("empty sliceID with branch should extract S-14, got %q", got)
+	}
+	if got := ResolveSliceID("", "main"); got != "main" {
+		t.Errorf("unmatched branch should fall back to branch name, got %q", got)
+	}
+}
+
 func TestParseIntentGateJSON_GreenNoLock(t *testing.T) {
 	raw := []byte(`{
 		"schema": "intentgate.verify/1",

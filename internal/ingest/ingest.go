@@ -5,11 +5,42 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/autox-my/mill/internal/domain"
 )
+
+var branchSlicePattern = regexp.MustCompile(`(?i)(?:^|[^a-z0-9])(s-\d+)(?:$|[^a-z0-9])`)
+
+// ExtractSliceIDFromBranch extracts a canonical slice ID (e.g. "S-01") from a branch name
+// such as "feature/s-01-slice-board". Returns ("", false) if no slice token is found.
+func ExtractSliceIDFromBranch(branch string) (string, bool) {
+	m := branchSlicePattern.FindStringSubmatch(strings.TrimSpace(branch))
+	if len(m) < 2 {
+		return "", false
+	}
+	return strings.ToUpper(m[1]), true
+}
+
+// ResolveSliceID resolves an explicit slice ID or falls back to extracting one from branch.
+func ResolveSliceID(sliceID, branch string) string {
+	s := strings.TrimSpace(sliceID)
+	if s != "" {
+		if strings.Contains(s, "/") {
+			if extracted, ok := ExtractSliceIDFromBranch(s); ok {
+				return extracted
+			}
+		}
+		return s
+	}
+	b := strings.TrimSpace(branch)
+	if extracted, ok := ExtractSliceIDFromBranch(b); ok {
+		return extracted
+	}
+	return b
+}
 
 // Meta supplies run context that is not present in tool stdout/JSON outputs.
 type Meta struct {

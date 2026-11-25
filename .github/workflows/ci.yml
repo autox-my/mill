@@ -66,11 +66,11 @@ jobs:
           MILL_URL: ${{ secrets.MILL_URL }}
           MILL_API_TOKEN: ${{ secrets.MILL_API_TOKEN }}
         run: |
-          SLICE_ID="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           if [ -x ./build/mill ] && [ -f build/ci-check.out ]; then
             ./build/mill ingest \
               --source check \
-              --slice "$SLICE_ID" \
+              --branch "$BRANCH" \
               --harness github-actions \
               --phase ci \
               --file build/ci-check.out || true

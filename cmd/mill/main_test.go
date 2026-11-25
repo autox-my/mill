@@ -181,6 +181,14 @@ func TestCLI_IngestSubcommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &ev); err != nil || ev.Verdict != domain.VerdictRed {
 		t.Fatalf("unexpected dry-run json: err=%v out=%s", err, out)
 	}
+
+	// Branch-to-slice extraction mode (--branch feature/s-20-foo -> S-20)
+	code, out, errOut = runCLIWithStdin(t, dbPath, checkOut,
+		"ingest", "--source", "check", "--branch", "feature/s-20-ingest-test", "--harness", "github-actions", "--phase", "ci",
+	)
+	if code != 0 || !strings.Contains(out, "S-20") {
+		t.Fatalf("ingest --branch failed (%d): %s %s", code, out, errOut)
+	}
 }
 
 func TestCLI_ImproveSubcommand(t *testing.T) {

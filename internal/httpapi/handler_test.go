@@ -11,6 +11,7 @@ import (
 	"github.com/autox-my/mill/internal/domain"
 	"github.com/autox-my/mill/internal/httpapi"
 	"github.com/autox-my/mill/internal/store"
+	"github.com/autox-my/mill/internal/webhooks"
 )
 
 const testToken = "test-secret-token-value"
@@ -506,5 +507,58 @@ func TestUpdateSlice_RiskFloor(t *testing.T) {
 	}
 	if sl.Risk != domain.RiskHigh {
 		t.Fatalf("expected clamped risk=high, got %q", sl.Risk)
+	}
+}
+
+// Proves REQ-0013: mounted POST /webhooks/{name} authenticates independently of MILL_API_TOKEN and deduplicates deliveries.
+func TestWebhooks_MountedRoute(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory store: %v", err)
+	}
+	defer st.Close()
+	whStore, err := webhooks.OpenDeliveryStore(":memory:")
+	if err != nil {
+		t.Fatalf("open delivery store: %v", err)
+	}
+	defer whStore.Close()
+
+	h := httpapi.NewHandlerWithConfig(httpapi.Config{
+		Store:    st,
+		APIToken: testToken,
+		WebhookHandler: webhooks.NewHandler(webhooks.Config{
+			Store:       st,
+			Deliveries:  whStore,
+			PulseSecret: "pulse-secret",
+		}),
+	})
+
+	// Missing webhook auth must fail with 401 without requiring MILL_API_TOKEN.
+	rec := doReq(t, h, http.MethodPost, "/webhooks/pulse", "", map[string]any{
+		"status": "firing", "alert": "High memory on ct122", "severity": "warning",
+	})
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth webhook got %d, want 401", rec.Code)
+	}
+
+	// Valid webhook Bearer secret creates a spec slice; replay deduplicates.
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/pulse", strings.NewReader(`{"status":"firing","alert":"High memory on ct122","severity":"warning"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer pulse-secret")
+	req.Header.Set("X-Pulse-Delivery", "deliv-mounted-1")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"created"`) {
+		t.Fatalf("valid pulse webhook got %d %s", rec.Code, rec.Body.String())
+	}
+
+	req2 := httptest.NewRequest(http.MethodPost, "/webhooks/pulse", strings.NewReader(`{"status":"firing","alert":"High memory on ct122","severity":"warning"}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer pulse-secret")
+	req2.Header.Set("X-Pulse-Delivery", "deliv-mounted-1")
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK || !strings.Contains(rec2.Body.String(), `"duplicate"`) {
+		t.Fatalf("duplicate pulse webhook got %d %s", rec2.Code, rec2.Body.String())
 	}
 }

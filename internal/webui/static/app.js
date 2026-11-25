@@ -326,7 +326,9 @@ async function openSliceDrawer(sl) {
   el("slice-drawer").showModal();
 
   try {
-    const runs = await apiFetch(`/runs?slice_id=${encodeURIComponent(sl.id)}&limit=50`);
+    const runs = window.__MILL_BOOTSTRAP__
+      ? state.runs.filter((r) => r.slice_id === sl.id).slice(0, 50)
+      : await apiFetch(`/runs?slice_id=${encodeURIComponent(sl.id)}&limit=50`);
     if (runs.length === 0) {
       timeline.replaceChildren(node("p", "empty-note", "No runs recorded for this slice."));
       return;
@@ -469,6 +471,19 @@ function bindEvents() {
 async function boot() {
   initTheme();
   bindEvents();
+  if (window.__MILL_BOOTSTRAP__) {
+    const data = window.__MILL_BOOTSTRAP__;
+    state.stats = data.stats || null;
+    state.slices = data.slices || [];
+    state.runs = data.runs || [];
+    state.report = data.report || null;
+    syncRepoOptions();
+    renderActiveView();
+    el("login-view").hidden = true;
+    el("app-view").hidden = false;
+    el("sync-status").textContent = "MCP snapshot";
+    return;
+  }
   try {
     await apiFetch("/auth/session");
     showApp();

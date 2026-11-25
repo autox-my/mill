@@ -151,13 +151,22 @@ func TestCLI_MCPSubcommand(t *testing.T) {
 	if code, _, errOut := runCLI(t, dbPath, "init"); code != 0 {
 		t.Fatalf("init failed: %s", errOut)
 	}
-	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n"
+	if code, _, errOut := runCLI(t, dbPath, "slice", "create", "--id", "S-50", "--repo", "autox-my/mill", "--title", "MCP App snapshot"); code != 0 {
+		t.Fatalf("slice create failed: %s", errOut)
+	}
+	req := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"ui://mill/board"}}`,
+	}, "\n") + "\n"
 	code, out, errOut := runCLIWithStdin(t, dbPath, req, "mcp")
 	if code != 0 {
 		t.Fatalf("mcp failed (%d): %s %s", code, out, errOut)
 	}
-	if !strings.Contains(out, `"protocolVersion"`) {
-		t.Fatalf("expected initialize response, got: %s", out)
+	for _, want := range []string{`"protocolVersion"`, `"ui://mill/board"`, `text/html;profile=mcp-app`, `__MILL_BOOTSTRAP__`, `S-50`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in mcp output, got: %s", want, out)
+		}
 	}
 }
 

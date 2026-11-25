@@ -1,0 +1,17 @@
+schema: req.claim/4
+claim_id: REQ-0013
+statement: "The HTTP API shall authenticate Forgejo and Pulse webhooks in constant time, deduplicate by delivery ID, and wrap payloads in an untrusted envelope."
+applicability: []
+relations: []
+rationale:
+  source: "docs/handoffs/2026-11-26-s02-handoff.md"
+  date: 2026-11-26
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/webhooks::TestAuthenticationModes"
+  - "github.com/autox-my/mill/internal/webhooks::TestDeliveryStoreAndDeduplication"
+  - "github.com/autox-my/mill/internal/webhooks::TestSanitizeAndEnvelope"
+  - "github.com/autox-my/mill/internal/webhooks::TestForgejoPullRequestMergedAndIgnored"
+  - "github.com/autox-my/mill/internal/webhooks::TestPulseAlerts"
+  - "github.com/autox-my/mill/internal/httpapi::TestWebhooks_MountedRoute"

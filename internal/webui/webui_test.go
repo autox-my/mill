@@ -43,3 +43,43 @@ func TestWebUI_ServesEmbeddedAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestBoardAppHTML_InlinesAssetsAndBootstrap(t *testing.T) {
+	bootstrap := map[string]any{
+		"slices": []map[string]any{
+			{"id": "S-1", "title": "Close </script> safely\u2028\u2029"},
+		},
+	}
+
+	html, err := BoardAppHTML(bootstrap)
+	if err != nil {
+		t.Fatalf("BoardAppHTML returned error: %v", err)
+	}
+
+	if strings.Contains(html, `<link rel="stylesheet" href="/static/app.css">`) {
+		t.Error("expected stylesheet link to be replaced")
+	}
+	if strings.Contains(html, `<script type="module" src="/static/app.js"></script>`) {
+		t.Error("expected module script src to be replaced")
+	}
+	if !strings.Contains(html, "<style>") || !strings.Contains(html, "--accent:") {
+		t.Error("expected inline app.css inside <style>")
+	}
+	if !strings.Contains(html, "<script type=\"module\">") || !strings.Contains(html, "window.__MILL_BOOTSTRAP__") {
+		t.Error("expected inline app.js and bootstrap script")
+	}
+	if strings.Contains(html, "Close </script>") {
+		t.Error("expected </script> inside bootstrap JSON to be escaped")
+	}
+	if strings.Contains(html, "\u2028") || strings.Contains(html, "\u2029") {
+		t.Error("expected U+2028 and U+2029 to be escaped")
+	}
+
+	noBootstrap, err := BoardAppHTML(nil)
+	if err != nil {
+		t.Fatalf("BoardAppHTML(nil) returned error: %v", err)
+	}
+	if strings.Contains(noBootstrap, "window.__MILL_BOOTSTRAP__ =") {
+		t.Error("expected no bootstrap assignment when bootstrap is nil")
+	}
+}

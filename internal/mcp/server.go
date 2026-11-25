@@ -143,7 +143,8 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 		return map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities": map[string]any{
-				"tools": map[string]any{},
+				"tools":     map[string]any{},
+				"resources": map[string]any{},
 			},
 			"serverInfo": map[string]any{
 				"name":    serverName,
@@ -156,6 +157,10 @@ func (s *Server) dispatch(ctx context.Context, method string, params json.RawMes
 		return map[string]any{"tools": s.tools}, nil
 	case "tools/call":
 		return s.handleToolsCall(ctx, params)
+	case "resources/list":
+		return s.handleResourcesList(), nil
+	case "resources/read":
+		return s.handleResourcesRead(ctx, params)
 	default:
 		return nil, &rpcError{Code: codeMethodNotFound, Message: fmt.Sprintf("method not found: %s", method)}
 	}

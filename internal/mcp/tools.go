@@ -98,6 +98,9 @@ func (s *Server) buildTools() []toolDef {
 				"phase":              stringProp("Execution phase"),
 				"verdict":            stringProp("Run verdict (pending, GREEN, RED, UNDECIDABLE)"),
 				"duration_sec":       intProp("Run duration in seconds"),
+				"tokens_in":          intProp("Optional input tokens consumed"),
+				"tokens_out":         intProp("Optional output tokens generated"),
+				"cost_usd":           numberProp("Optional run cost in USD"),
 				"amendments":         intProp("Number of amendments"),
 				"footprint_findings": intProp("Number of footprint findings"),
 				"req_diff_direction": stringProp("Optional req diff direction"),
@@ -265,16 +268,19 @@ func (s *Server) callUpdateSlice(ctx context.Context, raw json.RawMessage) (any,
 
 func (s *Server) callRecordRun(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args struct {
-		SliceID           string `json:"slice_id"`
-		Harness           string `json:"harness"`
-		Model             string `json:"model"`
-		Phase             string `json:"phase"`
-		Verdict           string `json:"verdict"`
-		DurationSec       int    `json:"duration_sec"`
-		Amendments        int    `json:"amendments"`
-		FootprintFindings int    `json:"footprint_findings"`
-		ReqDiffDirection  string `json:"req_diff_direction"`
-		Notes             string `json:"notes"`
+		SliceID           string  `json:"slice_id"`
+		Harness           string  `json:"harness"`
+		Model             string  `json:"model"`
+		Phase             string  `json:"phase"`
+		Verdict           string  `json:"verdict"`
+		DurationSec       int     `json:"duration_sec"`
+		TokensIn          int     `json:"tokens_in"`
+		TokensOut         int     `json:"tokens_out"`
+		CostUSD           float64 `json:"cost_usd"`
+		Amendments        int     `json:"amendments"`
+		FootprintFindings int     `json:"footprint_findings"`
+		ReqDiffDirection  string  `json:"req_diff_direction"`
+		Notes             string  `json:"notes"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -298,6 +304,9 @@ func (s *Server) callRecordRun(ctx context.Context, raw json.RawMessage) (any, e
 		Phase:             args.Phase,
 		Verdict:           domain.Verdict(args.Verdict),
 		DurationSec:       args.DurationSec,
+		TokensIn:          args.TokensIn,
+		TokensOut:         args.TokensOut,
+		CostUSD:           args.CostUSD,
 		Amendments:        args.Amendments,
 		FootprintFindings: args.FootprintFindings,
 		ReqDiffDirection:  args.ReqDiffDirection,
@@ -348,6 +357,10 @@ func stringProp(desc string) map[string]any {
 
 func intProp(desc string) map[string]any {
 	return map[string]any{"type": "integer", "description": desc}
+}
+
+func numberProp(desc string) map[string]any {
+	return map[string]any{"type": "number", "description": desc}
 }
 
 func stringArrayProp(desc string) map[string]any {

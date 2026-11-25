@@ -408,3 +408,25 @@ func TestPropose_ErrorHandling(t *testing.T) {
 		}
 	})
 }
+
+func TestAnalyze_TelemetryAndCycleTime(t *testing.T) {
+	t0 := time.Date(2026, 11, 26, 1, 0, 0, 0, time.UTC)
+	slices := []domain.Slice{
+		{ID: "S-1", State: domain.StateMerged, CreatedAt: t0, UpdatedAt: t0.Add(60 * time.Second)},
+		{ID: "S-2", State: domain.StateClaimed, CreatedAt: t0, UpdatedAt: t0.Add(999 * time.Second)},
+	}
+	events := []domain.RunEvent{
+		{ID: 1, SliceID: "S-1", Harness: "antigravity", Model: "gemini-4-neon", Phase: "verify", Verdict: domain.VerdictGreen, DurationSec: 20, TokensIn: 800, TokensOut: 200, CostUSD: 0.08},
+		{ID: 2, SliceID: "S-2", Harness: "opencode", Model: "gemini-4-hydrogen", Phase: "red", Verdict: domain.VerdictRed, DurationSec: 10, TokensIn: 400, TokensOut: 100, CostUSD: 0.02},
+	}
+	rep := observer.AnalyzeWithSlices(events, slices)
+	if rep.TotalTokens != 1500 || rep.TotalCost < 0.099 || rep.TotalCost > 0.101 {
+		t.Fatalf("unexpected telemetry totals in Report: %+v", rep)
+	}
+	if rep.CycleTime.MergedCount != 1 || rep.CycleTime.AvgSec != 60 {
+		t.Fatalf("unexpected CycleTime in Report: %+v", rep.CycleTime)
+	}
+	if len(rep.ByModel) != 2 || len(rep.ByHarness) != 2 {
+		t.Fatalf("unexpected breakdowns in Report: models=%+v harnesses=%+v", rep.ByModel, rep.ByHarness)
+	}
+}

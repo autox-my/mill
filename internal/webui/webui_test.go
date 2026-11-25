@@ -17,9 +17,9 @@ func TestWebUI_ServesEmbeddedAssets(t *testing.T) {
 		wantType    string
 		wantContain []string
 	}{
-		{"/", http.StatusOK, "text/html", []string{"<title>mill</title>"}},
+		{"/", http.StatusOK, "text/html", []string{"<title>mill</title>", "kpi-cycle-time", "kpi-spend", "telemetry-tbody"}},
 		{"/static/app.css", http.StatusOK, "text/css", []string{"--accent:", ".risk-high", ".slice-card-high-risk"}},
-		{"/static/app.js", http.StatusOK, "javascript", []string{"/auth/login", "riskBadge", "riskRank"}},
+		{"/static/app.js", http.StatusOK, "javascript", []string{"/auth/login", "riskBadge", "riskRank", "formatCost", "renderTelemetry"}},
 		{"/static/missing.js", http.StatusNotFound, "", nil},
 	}
 

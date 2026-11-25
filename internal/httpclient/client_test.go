@@ -97,22 +97,26 @@ func TestHTTPClient_RoundTripAndErrors(t *testing.T) {
 	}
 
 	ev, err := c.RecordRun(ctx, domain.RunEvent{
-		SliceID: "S-20",
-		Harness: "claude-code",
-		Phase:   "green",
-		Verdict: domain.VerdictGreen,
+		SliceID:   "S-20",
+		Harness:   "claude-code",
+		Model:     "claude-sonnet",
+		Phase:     "green",
+		Verdict:   domain.VerdictGreen,
+		TokensIn:  800,
+		TokensOut: 200,
+		CostUSD:   0.03,
 	})
-	if err != nil || ev.ID == 0 {
+	if err != nil || ev.ID == 0 || ev.TokensIn != 800 || ev.CostUSD != 0.03 {
 		t.Fatalf("RecordRun: err=%v ev=%+v", err, ev)
 	}
 
 	runs, err := c.ListRuns(ctx, "S-20", 10)
-	if err != nil || len(runs) != 1 {
+	if err != nil || len(runs) != 1 || runs[0].TokensOut != 200 {
 		t.Fatalf("ListRuns: err=%v runs=%+v", err, runs)
 	}
 
 	stats, err := c.Stats(ctx)
-	if err != nil || stats.TotalSlices != 1 || stats.GreenRuns != 1 {
+	if err != nil || stats.TotalSlices != 1 || stats.GreenRuns != 1 || stats.TotalTokensIn != 800 || stats.TotalCostUSD < 0.029 || len(stats.ByModel) != 1 {
 		t.Fatalf("Stats: err=%v stats=%+v", err, stats)
 	}
 

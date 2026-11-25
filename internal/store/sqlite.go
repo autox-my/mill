@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS run_events (
 	phase TEXT NOT NULL,
 	verdict TEXT NOT NULL,
 	duration_sec INTEGER NOT NULL DEFAULT 0,
+	tokens_in INTEGER NOT NULL DEFAULT 0,
+	tokens_out INTEGER NOT NULL DEFAULT 0,
+	cost_usd REAL NOT NULL DEFAULT 0,
 	amendments INTEGER NOT NULL DEFAULT 0,
 	footprint_findings INTEGER NOT NULL DEFAULT 0,
 	req_diff_direction TEXT NOT NULL DEFAULT '',
@@ -98,15 +101,20 @@ func initDB(db *sql.DB) error {
 	if err := ensureSliceRiskColumn(db); err != nil {
 		return fmt.Errorf("migrate slice risk: %w", err)
 	}
+	if err := ensureRunTelemetryColumns(db); err != nil {
+		return fmt.Errorf("migrate run telemetry: %w", err)
+	}
 	return nil
 }
 
-func ensureSliceRiskColumn(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(slices)`)
+func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
-		return err
+		return nil, err
 	}
-	hasRisk := false
+	defer rows.Close()
+
+	cols := make(map[string]bool)
 	for rows.Next() {
 		var (
 			cid     int
@@ -117,21 +125,47 @@ func ensureSliceRiskColumn(db *sql.DB) error {
 			pk      int
 		)
 		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
-			_ = rows.Close()
-			return err
+			return nil, err
 		}
-		if name == "risk" {
-			hasRisk = true
-		}
+		cols[name] = true
 	}
-	if err := rows.Close(); err != nil {
+	return cols, rows.Err()
+}
+
+func ensureSliceRiskColumn(db *sql.DB) error {
+	cols, err := tableColumns(db, "slices")
+	if err != nil {
 		return err
 	}
-	if hasRisk {
+	if cols["risk"] {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE slices ADD COLUMN risk TEXT NOT NULL DEFAULT 'low'`)
 	return err
+}
+
+func ensureRunTelemetryColumns(db *sql.DB) error {
+	cols, err := tableColumns(db, "run_events")
+	if err != nil {
+		return err
+	}
+	migrations := []struct {
+		col string
+		ddl string
+	}{
+		{"tokens_in", `ALTER TABLE run_events ADD COLUMN tokens_in INTEGER NOT NULL DEFAULT 0`},
+		{"tokens_out", `ALTER TABLE run_events ADD COLUMN tokens_out INTEGER NOT NULL DEFAULT 0`},
+		{"cost_usd", `ALTER TABLE run_events ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0`},
+	}
+	for _, m := range migrations {
+		if cols[m.col] {
+			continue
+		}
+		if _, err := db.Exec(m.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close closes the underlying SQLite handle.
@@ -399,11 +433,12 @@ func (s *Store) RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEv
 			return err
 		}
 		const ins = `
-			INSERT INTO run_events (slice_id, harness, model, phase, verdict, duration_sec, amendments, footprint_findings, req_diff_direction, notes, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			INSERT INTO run_events (slice_id, harness, model, phase, verdict, duration_sec, tokens_in, tokens_out, cost_usd, amendments, footprint_findings, req_diff_direction, notes, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		res, err := tx.ExecContext(ctx, ins,
 			ev.SliceID, ev.Harness, ev.Model, ev.Phase, string(ev.Verdict),
-			ev.DurationSec, ev.Amendments, ev.FootprintFindings, ev.ReqDiffDirection,
+			ev.DurationSec, ev.TokensIn, ev.TokensOut, ev.CostUSD,
+			ev.Amendments, ev.FootprintFindings, ev.ReqDiffDirection,
 			ev.Notes, formatTime(ev.CreatedAt),
 		)
 		if err != nil {
@@ -432,7 +467,7 @@ func (s *Store) ListRuns(ctx context.Context, sliceID string, limit int) ([]doma
 		limit = 50
 	}
 	query := `
-		SELECT id, slice_id, harness, model, phase, verdict, duration_sec, amendments, footprint_findings, req_diff_direction, notes, created_at
+		SELECT id, slice_id, harness, model, phase, verdict, duration_sec, tokens_in, tokens_out, cost_usd, amendments, footprint_findings, req_diff_direction, notes, created_at
 		FROM run_events`
 	var args []any
 	if strings.TrimSpace(sliceID) != "" {
@@ -459,40 +494,47 @@ func (s *Store) ListRuns(ctx context.Context, sliceID string, limit int) ([]doma
 	return out, rows.Err()
 }
 
-// Stats returns aggregated slice and run ledger counts.
+// Stats returns aggregated slice, cycle time, spend, and run ledger counts.
 func (s *Store) Stats(ctx context.Context) (domain.StatsSummary, error) {
 	summary := domain.StatsSummary{ByState: make(map[domain.SliceState]int)}
-	rows, err := s.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM slices GROUP BY state`)
+	allSlices, err := s.ListSlices(ctx, "")
 	if err != nil {
 		return summary, fmt.Errorf("query slice stats: %w", err)
 	}
-	for rows.Next() {
-		var st string
-		var cnt int
-		if err := rows.Scan(&st, &cnt); err != nil {
-			_ = rows.Close()
-			return summary, err
-		}
-		summary.ByState[domain.SliceState(st)] = cnt
-		summary.TotalSlices += cnt
+	for _, sl := range allSlices {
+		summary.ByState[sl.State]++
+		summary.TotalSlices++
 	}
-	if err := rows.Close(); err != nil {
-		return summary, err
-	}
+	summary.CycleTime = domain.ComputeCycleTime(allSlices)
 
 	const runQ = `
 		SELECT COUNT(*),
 			COALESCE(SUM(CASE WHEN verdict = 'GREEN' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN verdict = 'RED' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(amendments), 0),
-			COALESCE(SUM(footprint_findings), 0)
+			COALESCE(SUM(footprint_findings), 0),
+			COALESCE(SUM(tokens_in), 0),
+			COALESCE(SUM(tokens_out), 0),
+			COALESCE(SUM(cost_usd), 0)
 		FROM run_events`
 	if err := s.db.QueryRowContext(ctx, runQ).Scan(
 		&summary.TotalRuns, &summary.GreenRuns, &summary.RedRuns,
 		&summary.TotalAmendments, &summary.TotalFindings,
+		&summary.TotalTokensIn, &summary.TotalTokensOut, &summary.TotalCostUSD,
 	); err != nil {
 		return summary, fmt.Errorf("query run stats: %w", err)
 	}
+	if summary.CycleTime.MergedCount > 0 {
+		merged := float64(summary.CycleTime.MergedCount)
+		summary.AvgCostPerMergedUSD = summary.TotalCostUSD / merged
+		summary.AvgTokensPerMerged = float64(summary.TotalTokensIn+summary.TotalTokensOut) / merged
+	}
+	runs, err := s.ListRuns(ctx, "", 10000)
+	if err != nil {
+		return summary, fmt.Errorf("query run breakdowns: %w", err)
+	}
+	summary.ByModel = domain.BuildTelemetryBreakdown(runs, func(ev domain.RunEvent) string { return ev.Model })
+	summary.ByHarness = domain.BuildTelemetryBreakdown(runs, func(ev domain.RunEvent) string { return ev.Harness })
 	return summary, nil
 }
 
@@ -577,7 +619,8 @@ func scanRunEvent(sc scanner) (domain.RunEvent, error) {
 	)
 	err := sc.Scan(
 		&ev.ID, &ev.SliceID, &ev.Harness, &ev.Model, &ev.Phase, &verdictStr,
-		&ev.DurationSec, &ev.Amendments, &ev.FootprintFindings, &ev.ReqDiffDirection,
+		&ev.DurationSec, &ev.TokensIn, &ev.TokensOut, &ev.CostUSD,
+		&ev.Amendments, &ev.FootprintFindings, &ev.ReqDiffDirection,
 		&ev.Notes, &createdStr,
 	)
 	if err != nil {

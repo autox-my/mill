@@ -391,3 +391,123 @@ CREATE TABLE slices (
 		t.Fatalf("breaking floor clamped = %q (err=%v), want high", sl.Risk, err)
 	}
 }
+
+// Proves REQ-0015: store idempotently migrates run_events telemetry columns and aggregates cycle time and breakdowns.
+func TestStore_RunTelemetryMigrationAndStats(t *testing.T) {
+	legacyPath := filepath.Join(t.TempDir(), "legacy-telemetry.db")
+	rawDB, err := sql.Open("sqlite", legacyPath)
+	if err != nil {
+		t.Fatalf("sql.Open legacy: %v", err)
+	}
+	const legacySchema = `
+CREATE TABLE slices (
+	id TEXT PRIMARY KEY,
+	repo TEXT NOT NULL,
+	title TEXT NOT NULL,
+	claims_json TEXT NOT NULL DEFAULT '[]',
+	intent_lock TEXT NOT NULL DEFAULT '',
+	branch TEXT NOT NULL DEFAULT '',
+	state TEXT NOT NULL,
+	owner TEXT NOT NULL DEFAULT '',
+	lease_expires_at TEXT,
+	attempt INTEGER NOT NULL DEFAULT 0,
+	last_verdict TEXT NOT NULL DEFAULT 'pending',
+	risk TEXT NOT NULL DEFAULT 'low',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE TABLE run_events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	slice_id TEXT NOT NULL REFERENCES slices(id) ON DELETE CASCADE,
+	harness TEXT NOT NULL,
+	model TEXT NOT NULL DEFAULT '',
+	phase TEXT NOT NULL,
+	verdict TEXT NOT NULL,
+	duration_sec INTEGER NOT NULL DEFAULT 0,
+	amendments INTEGER NOT NULL DEFAULT 0,
+	footprint_findings INTEGER NOT NULL DEFAULT 0,
+	req_diff_direction TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	created_at TEXT NOT NULL
+);`
+	if _, err := rawDB.Exec(legacySchema); err != nil {
+		t.Fatalf("exec legacy schema: %v", err)
+	}
+	t0 := time.Date(2026, 11, 26, 0, 0, 0, 0, time.UTC)
+	if _, err := rawDB.Exec(
+		`INSERT INTO slices (id, repo, title, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"S-LEG", "autox-my/mill", "Legacy telemetry slice", "merged", t0.Format(time.RFC3339Nano), t0.Add(120*time.Second).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert legacy slice: %v", err)
+	}
+	if _, err := rawDB.Exec(
+		`INSERT INTO run_events (slice_id, harness, model, phase, verdict, duration_sec, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"S-LEG", "claude-code", "sonnet-4", "verify", "GREEN", 25, t0.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatalf("insert legacy run: %v", err)
+	}
+	_ = rawDB.Close()
+
+	// Opening legacy DB migrates run_events; re-opening must be idempotent.
+	st1, err := Open(legacyPath)
+	if err != nil {
+		t.Fatalf("first Open(legacy): %v", err)
+	}
+	_ = st1.Close()
+
+	st, err := Open(legacyPath)
+	if err != nil {
+		t.Fatalf("second Open(legacy): %v", err)
+	}
+	defer st.Close()
+
+	ctx := context.Background()
+	runs, err := st.ListRuns(ctx, "S-LEG", 10)
+	if err != nil || len(runs) != 1 || runs[0].TokensIn != 0 || runs[0].CostUSD != 0 {
+		t.Fatalf("legacy run list = (%+v, %v)", runs, err)
+	}
+
+	// Create second merged slice and record telemetry-enriched runs.
+	if err := st.CreateSlice(ctx, domain.Slice{
+		ID: "S-NEW", Repo: "autox-my/mill", Title: "Telemetry slice",
+		State: domain.StateMerged, CreatedAt: t0, UpdatedAt: t0.Add(240 * time.Second),
+	}); err != nil {
+		t.Fatalf("CreateSlice S-NEW: %v", err)
+	}
+	ev, err := st.RecordRun(ctx, domain.RunEvent{
+		SliceID:     "S-NEW",
+		Harness:     "antigravity",
+		Model:       "gemini-4-neon",
+		Phase:       "verify",
+		Verdict:     domain.VerdictGreen,
+		DurationSec: 45,
+		TokensIn:    1500,
+		TokensOut:   500,
+		CostUSD:     0.12,
+	})
+	if err != nil || ev.TokensIn != 1500 || ev.TokensOut != 500 || ev.CostUSD != 0.12 {
+		t.Fatalf("RecordRun telemetry = (%+v, %v)", ev, err)
+	}
+
+	runs, err = st.ListRuns(ctx, "S-NEW", 10)
+	if err != nil || len(runs) != 1 || runs[0].TokensIn != 1500 || runs[0].TokensOut != 500 || runs[0].CostUSD != 0.12 {
+		t.Fatalf("ListRuns telemetry = (%+v, %v)", runs, err)
+	}
+
+	summary, err := st.Stats(ctx)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if summary.TotalTokensIn != 1500 || summary.TotalTokensOut != 500 || summary.TotalCostUSD < 0.119 || summary.TotalCostUSD > 0.121 {
+		t.Fatalf("unexpected token/cost totals: %+v", summary)
+	}
+	if summary.CycleTime.MergedCount != 2 || summary.CycleTime.AvgSec != 180 || summary.CycleTime.P50Sec != 180 || summary.CycleTime.MaxSec != 240 {
+		t.Fatalf("unexpected CycleTime: %+v", summary.CycleTime)
+	}
+	if summary.AvgCostPerMergedUSD < 0.059 || summary.AvgCostPerMergedUSD > 0.061 || summary.AvgTokensPerMerged != 1000 {
+		t.Fatalf("unexpected per-merged averages: cost=%v tokens=%v", summary.AvgCostPerMergedUSD, summary.AvgTokensPerMerged)
+	}
+	if len(summary.ByModel) != 2 || len(summary.ByHarness) != 2 {
+		t.Fatalf("unexpected breakdowns: models=%+v harnesses=%+v", summary.ByModel, summary.ByHarness)
+	}
+}

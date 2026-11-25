@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"math"
 	"testing"
 	"time"
 )
@@ -148,5 +149,55 @@ func TestRiskFloorAndOrdering(t *testing.T) {
 	}
 	if got := EffectiveRisk("", nil); got != RiskLow {
 		t.Fatalf("EffectiveRisk(empty, nil) = %q, want %q", got, RiskLow)
+	}
+}
+
+func TestTelemetryAndCycleTime(t *testing.T) {
+	base := RunEvent{SliceID: "S-01", Harness: "antigravity", Phase: "verify", Verdict: VerdictGreen, TokensIn: 1200, TokensOut: 300, CostUSD: 0.045}
+	if err := ValidateRunEvent(base); err != nil {
+		t.Fatalf("valid telemetry rejected: %v", err)
+	}
+	for _, mutate := range []func(*RunEvent){
+		func(e *RunEvent) { e.TokensIn = -1 },
+		func(e *RunEvent) { e.TokensOut = -5 },
+		func(e *RunEvent) { e.CostUSD = -0.01 },
+		func(e *RunEvent) { e.CostUSD = math.NaN() },
+		func(e *RunEvent) { e.CostUSD = math.Inf(1) },
+	} {
+		ev := base
+		mutate(&ev)
+		if err := ValidateRunEvent(ev); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("expected ErrInvalidInput for invalid telemetry %+v, got %v", ev, err)
+		}
+	}
+
+	t0 := time.Date(2026, 11, 26, 1, 0, 0, 0, time.UTC)
+	slices := []Slice{
+		{ID: "S-1", State: StateSpec, CreatedAt: t0, UpdatedAt: t0.Add(999 * time.Second)},
+		{ID: "S-2", State: StateMerged, CreatedAt: t0, UpdatedAt: t0.Add(100 * time.Second)},
+		{ID: "S-3", State: StateMerged, CreatedAt: t0, UpdatedAt: t0.Add(300 * time.Second)},
+		{ID: "S-4", State: StateMerged, CreatedAt: t0, UpdatedAt: t0.Add(200 * time.Second)},
+	}
+	ct := ComputeCycleTime(slices)
+	if ct.MergedCount != 3 || ct.AvgSec != 200 || ct.P50Sec != 200 || ct.MaxSec != 300 {
+		t.Fatalf("unexpected CycleTimeStats: %+v", ct)
+	}
+	if empty := ComputeCycleTime(slices[:1]); empty.MergedCount != 0 || empty.AvgSec != 0 {
+		t.Fatalf("expected zero CycleTimeStats, got %+v", empty)
+	}
+
+	runs := []RunEvent{
+		{SliceID: "S-2", Harness: "antigravity", Model: "gemini-4-neon", Phase: "verify", Verdict: VerdictGreen, DurationSec: 10, TokensIn: 1000, TokensOut: 500, CostUSD: 0.10},
+		{SliceID: "S-2", Harness: "antigravity", Model: "gemini-4-neon", Phase: "red", Verdict: VerdictRed, DurationSec: 20, TokensIn: 500, TokensOut: 500, CostUSD: 0.05},
+		{SliceID: "S-3", Harness: "opencode", Model: "gemini-4-hydrogen", Phase: "verify", Verdict: VerdictGreen, DurationSec: 30, TokensIn: 2000, TokensOut: 1000, CostUSD: 0.20},
+		{SliceID: "S-4", Harness: "codex", Phase: "verify", Verdict: VerdictGreen, DurationSec: 15},
+	}
+	byModel := BuildTelemetryBreakdown(runs, func(ev RunEvent) string { return ev.Model })
+	if len(byModel) != 2 || byModel[0].Key != "gemini-4-neon" || byModel[0].Runs != 2 || byModel[0].GreenRuns != 1 || byModel[0].GreenRate != 0.5 || byModel[0].AvgDurSec != 15 || byModel[0].TotalTokens != 2500 {
+		t.Fatalf("unexpected byModel breakdown: %+v", byModel)
+	}
+	byHarness := BuildTelemetryBreakdown(runs, func(ev RunEvent) string { return ev.Harness })
+	if len(byHarness) != 3 || byHarness[0].Key != "antigravity" || byHarness[0].Runs != 2 {
+		t.Fatalf("unexpected byHarness breakdown: %+v", byHarness)
 	}
 }

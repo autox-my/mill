@@ -5,7 +5,9 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 )
@@ -97,6 +99,9 @@ type RunEvent struct {
 	Phase             string    `json:"phase"`
 	Verdict           Verdict   `json:"verdict"`
 	DurationSec       int       `json:"duration_sec"`
+	TokensIn          int       `json:"tokens_in,omitempty"`
+	TokensOut         int       `json:"tokens_out,omitempty"`
+	CostUSD           float64   `json:"cost_usd,omitempty"`
 	Amendments        int       `json:"amendments"`
 	FootprintFindings int       `json:"footprint_findings"`
 	ReqDiffDirection  string    `json:"req_diff_direction,omitempty"`
@@ -104,15 +109,42 @@ type RunEvent struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+// CycleTimeStats summarizes created-to-merged duration across merged slices.
+type CycleTimeStats struct {
+	MergedCount int     `json:"merged_count"`
+	AvgSec      float64 `json:"avg_sec"`
+	P50Sec      float64 `json:"p50_sec"`
+	MaxSec      int     `json:"max_sec"`
+}
+
+// TelemetryBreakdown aggregates run count, green rate, duration, tokens, and spend for a key.
+type TelemetryBreakdown struct {
+	Key         string  `json:"key"`
+	Runs        int     `json:"runs"`
+	GreenRuns   int     `json:"green_runs"`
+	GreenRate   float64 `json:"green_rate"`
+	AvgDurSec   float64 `json:"avg_duration_s"`
+	TotalTokens int     `json:"total_tokens"`
+	TotalCost   float64 `json:"total_cost_usd"`
+}
+
 // StatsSummary aggregates slice counts and run ledger metrics.
 type StatsSummary struct {
-	TotalSlices     int                `json:"total_slices"`
-	ByState         map[SliceState]int `json:"by_state"`
-	TotalRuns       int                `json:"total_runs"`
-	GreenRuns       int                `json:"green_runs"`
-	RedRuns         int                `json:"red_runs"`
-	TotalAmendments int                `json:"total_amendments"`
-	TotalFindings   int                `json:"total_findings"`
+	TotalSlices         int                  `json:"total_slices"`
+	ByState             map[SliceState]int   `json:"by_state"`
+	TotalRuns           int                  `json:"total_runs"`
+	GreenRuns           int                  `json:"green_runs"`
+	RedRuns             int                  `json:"red_runs"`
+	TotalAmendments     int                  `json:"total_amendments"`
+	TotalFindings       int                  `json:"total_findings"`
+	TotalTokensIn       int                  `json:"total_tokens_in"`
+	TotalTokensOut      int                  `json:"total_tokens_out"`
+	TotalCostUSD        float64              `json:"total_cost_usd"`
+	AvgCostPerMergedUSD float64              `json:"avg_cost_per_merged_usd"`
+	AvgTokensPerMerged  float64              `json:"avg_tokens_per_merged"`
+	CycleTime           CycleTimeStats       `json:"cycle_time"`
+	ByModel             []TelemetryBreakdown `json:"by_model,omitempty"`
+	ByHarness           []TelemetryBreakdown `json:"by_harness,omitempty"`
 }
 
 // ValidState reports whether s is a recognized slice lifecycle state.
@@ -246,8 +278,94 @@ func ValidateRunEvent(ev RunEvent) error {
 	if !ValidVerdict(ev.Verdict) {
 		return fmt.Errorf("%w: invalid verdict %q", ErrInvalidInput, ev.Verdict)
 	}
-	if ev.DurationSec < 0 || ev.Amendments < 0 || ev.FootprintFindings < 0 {
+	if ev.DurationSec < 0 || ev.Amendments < 0 || ev.FootprintFindings < 0 || ev.TokensIn < 0 || ev.TokensOut < 0 {
 		return fmt.Errorf("%w: counters must be non-negative", ErrInvalidInput)
 	}
+	if ev.CostUSD < 0 || math.IsNaN(ev.CostUSD) || math.IsInf(ev.CostUSD, 0) {
+		return fmt.Errorf("%w: cost_usd must be non-negative and finite", ErrInvalidInput)
+	}
 	return nil
+}
+
+// ComputeCycleTime computes average, median (p50), and max cycle time in seconds for merged slices.
+func ComputeCycleTime(sliceList []Slice) CycleTimeStats {
+	var durations []int
+	var total int
+	for _, s := range sliceList {
+		if s.State != StateMerged || s.CreatedAt.IsZero() || s.UpdatedAt.IsZero() {
+			continue
+		}
+		sec := int(s.UpdatedAt.Sub(s.CreatedAt).Seconds())
+		if sec < 0 {
+			sec = 0
+		}
+		durations = append(durations, sec)
+		total += sec
+	}
+	n := len(durations)
+	if n == 0 {
+		return CycleTimeStats{}
+	}
+	slices.Sort(durations)
+	p50 := float64(durations[n/2])
+	if n%2 == 0 {
+		p50 = float64(durations[n/2-1]+durations[n/2]) / 2
+	}
+	return CycleTimeStats{
+		MergedCount: n,
+		AvgSec:      float64(total) / float64(n),
+		P50Sec:      p50,
+		MaxSec:      durations[n-1],
+	}
+}
+
+type telemetryAcc struct {
+	key         string
+	runs        int
+	greenRuns   int
+	totalDurSec int
+	totalTokens int
+	totalCost   float64
+}
+
+// BuildTelemetryBreakdown groups run events by keyFn and returns sorted breakdown metrics.
+func BuildTelemetryBreakdown(events []RunEvent, keyFn func(RunEvent) string) []TelemetryBreakdown {
+	accMap := make(map[string]*telemetryAcc)
+	for _, ev := range events {
+		k := strings.TrimSpace(keyFn(ev))
+		if k == "" {
+			continue
+		}
+		acc := accMap[k]
+		if acc == nil {
+			acc = &telemetryAcc{key: k}
+			accMap[k] = acc
+		}
+		acc.runs++
+		if ev.Verdict == VerdictGreen {
+			acc.greenRuns++
+		}
+		acc.totalDurSec += ev.DurationSec
+		acc.totalTokens += ev.TokensIn + ev.TokensOut
+		acc.totalCost += ev.CostUSD
+	}
+	out := make([]TelemetryBreakdown, 0, len(accMap))
+	for _, acc := range accMap {
+		out = append(out, TelemetryBreakdown{
+			Key:         acc.key,
+			Runs:        acc.runs,
+			GreenRuns:   acc.greenRuns,
+			GreenRate:   float64(acc.greenRuns) / float64(acc.runs),
+			AvgDurSec:   float64(acc.totalDurSec) / float64(acc.runs),
+			TotalTokens: acc.totalTokens,
+			TotalCost:   acc.totalCost,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Runs != out[j].Runs {
+			return out[i].Runs > out[j].Runs
+		}
+		return out[i].Key < out[j].Key
+	})
+	return out
 }

@@ -313,8 +313,8 @@ func TestRuns_AndStats(t *testing.T) {
 		DurationSec: 12, Amendments: 1, FootprintFindings: 2,
 	}
 	ev2 := domain.RunEvent{
-		SliceID: "SL-20", Harness: "codex", Phase: "green", Verdict: domain.VerdictGreen,
-		DurationSec: 30,
+		SliceID: "SL-20", Harness: "codex", Model: "gpt-5", Phase: "green", Verdict: domain.VerdictGreen,
+		DurationSec: 30, TokensIn: 1000, TokensOut: 250, CostUSD: 0.04,
 	}
 	if rec = doReq(t, h, http.MethodPost, "/runs", auth, ev1); rec.Code != http.StatusCreated {
 		t.Fatalf("post run 1: got %d (%s), want 201", rec.Code, rec.Body.String())
@@ -332,7 +332,7 @@ func TestRuns_AndStats(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&runs); err != nil {
 		t.Fatalf("decode runs: %v", err)
 	}
-	if len(runs) != 1 || runs[0].Phase != "green" {
+	if len(runs) != 1 || runs[0].Phase != "green" || runs[0].TokensIn != 1000 || runs[0].TokensOut != 250 || runs[0].CostUSD != 0.04 {
 		t.Fatalf("unexpected runs: %+v", runs)
 	}
 
@@ -345,7 +345,7 @@ func TestRuns_AndStats(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&stats); err != nil {
 		t.Fatalf("decode stats: %v", err)
 	}
-	if stats.TotalSlices != 1 || stats.TotalRuns != 2 || stats.GreenRuns != 1 || stats.RedRuns != 1 || stats.TotalAmendments != 1 || stats.TotalFindings != 2 {
+	if stats.TotalSlices != 1 || stats.TotalRuns != 2 || stats.GreenRuns != 1 || stats.RedRuns != 1 || stats.TotalAmendments != 1 || stats.TotalFindings != 2 || stats.TotalTokensIn != 1000 || stats.TotalTokensOut != 250 || len(stats.ByModel) != 1 {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }

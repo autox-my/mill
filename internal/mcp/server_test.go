@@ -414,6 +414,15 @@ func TestMCP_AppResourceBoard(t *testing.T) {
 		t.Errorf("expected self-contained HTML with bootstrapped slice S-APP-1")
 	}
 
+	// Test record_run with telemetry fields (tokens_in, tokens_out, cost_usd).
+	telResps := runRPC(t, srv,
+		`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"record_run","arguments":{"slice_id":"S-APP-1","harness":"antigravity","model":"gemini-4-neon","phase":"verify","verdict":"GREEN","duration_sec":12,"tokens_in":900,"tokens_out":100,"cost_usd":0.05}}}`,
+	)
+	r10 := decodeToolResult(t, telResps[0])
+	if r10.IsError || !strings.Contains(r10.Content[0].Text, `"tokens_in":900`) || !strings.Contains(r10.Content[0].Text, `"cost_usd":0.05`) {
+		t.Fatalf("expected telemetry fields in record_run result, got %+v", r10)
+	}
+
 	if resps[3].Error == nil || resps[3].Error.Code != -32002 {
 		t.Fatalf("expected -32002 for unknown resource, got %+v", resps[3].Error)
 	}

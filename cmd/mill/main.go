@@ -274,6 +274,7 @@ func cmdSliceLease(dbPath string, args []string, isClaim bool, stdout, stderr io
 func cmdSliceUpdate(dbPath string, args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("slice update", stderr)
 	id := fs.String("id", "", "slice id")
+	branch := fs.String("branch", "", "optional git branch to extract slice id (e.g. feature/s-01-foo -> S-01)")
 	state := fs.String("state", "", "next state")
 	verdict := fs.String("verdict", "", "optional verdict")
 	if err := fs.Parse(args); err != nil {
@@ -286,7 +287,8 @@ func cmdSliceUpdate(dbPath string, args []string, stdout, stderr io.Writer) int 
 	}
 	defer st.Close()
 
-	sl, err := st.UpdateSliceState(context.Background(), *id, domain.SliceState(*state), domain.Verdict(*verdict), time.Now().UTC())
+	resolvedID := ingest.ResolveSliceID(*id, *branch)
+	sl, err := st.UpdateSliceState(context.Background(), resolvedID, domain.SliceState(*state), domain.Verdict(*verdict), time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(stderr, "slice update: %v\n", err)
 		return 1

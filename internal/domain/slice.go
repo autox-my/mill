@@ -48,8 +48,8 @@ var allowedTransitions = map[SliceState][]SliceState{
 	StateLocked:        {StateClaimed},
 	StateClaimed:       {StateRed, StateGreen, StateInReview, StateSpec},
 	StateRed:           {StateGreen, StateClaimed},
-	StateGreen:         {StateInReview, StateRed, StateReadyForHuman},
-	StateInReview:      {StateReadyForHuman, StateRed, StateGreen},
+	StateGreen:         {StateInReview, StateRed, StateReadyForHuman, StateMerged},
+	StateInReview:      {StateReadyForHuman, StateRed, StateGreen, StateMerged},
 	StateReadyForHuman: {StateMerged, StateInReview},
 	StateMerged:        {},
 }

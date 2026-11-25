@@ -122,6 +122,12 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "slices:") {
 		t.Fatalf("stats text failed (%d): %s %s", code, out, errOut)
 	}
+
+	// Branch-to-slice resolution on slice update (--branch feature/s-10-foo -> S-10).
+	code, out, errOut = runCLI(t, dbPath, "slice", "update", "--branch", "feature/s-10-foo", "--state", "merged", "--verdict", "GREEN")
+	if code != 0 || !strings.Contains(out, "state=merged") {
+		t.Fatalf("slice update --branch failed (%d): %s %s", code, out, errOut)
+	}
 }
 
 func TestCLI_MCPSubcommand(t *testing.T) {

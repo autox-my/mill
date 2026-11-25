@@ -318,9 +318,30 @@ body {
 
 .card-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+}
+
+.card-top > .mono {
+  white-space: nowrap;
+}
+
+.card-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.slice-card-high-risk {
+  border-left: 3px solid var(--red);
+}
+
+.lane-human .slice-card-high-risk {
+  border-color: var(--red);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, var(--red));
 }
 
 .card-title {
@@ -343,6 +364,7 @@ body {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .verdict-GREEN {
@@ -363,6 +385,31 @@ body {
 .verdict-pending {
   color: var(--muted);
   background: var(--surface-subtle);
+}
+
+.risk-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.risk-low {
+  color: var(--muted);
+  background: var(--surface-subtle);
+}
+
+.risk-medium {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+
+.risk-high {
+  color: var(--red);
+  background: var(--red-bg);
 }
 
 .table-wrap {

@@ -15,12 +15,12 @@ func TestWebUI_ServesEmbeddedAssets(t *testing.T) {
 		path        string
 		wantCode    int
 		wantType    string
-		wantContain string
+		wantContain []string
 	}{
-		{"/", http.StatusOK, "text/html", "<title>mill</title>"},
-		{"/static/app.css", http.StatusOK, "text/css", "--accent:"},
-		{"/static/app.js", http.StatusOK, "javascript", "/auth/login"},
-		{"/static/missing.js", http.StatusNotFound, "", ""},
+		{"/", http.StatusOK, "text/html", []string{"<title>mill</title>"}},
+		{"/static/app.css", http.StatusOK, "text/css", []string{"--accent:", ".risk-high", ".slice-card-high-risk"}},
+		{"/static/app.js", http.StatusOK, "javascript", []string{"/auth/login", "riskBadge", "riskRank"}},
+		{"/static/missing.js", http.StatusNotFound, "", nil},
 	}
 
 	for _, tc := range cases {
@@ -33,8 +33,10 @@ func TestWebUI_ServesEmbeddedAssets(t *testing.T) {
 		if tc.wantType != "" && !strings.Contains(rec.Header().Get("Content-Type"), tc.wantType) {
 			t.Errorf("GET %s content-type = %q, want %q", tc.path, rec.Header().Get("Content-Type"), tc.wantType)
 		}
-		if tc.wantContain != "" && !strings.Contains(rec.Body.String(), tc.wantContain) {
-			t.Errorf("GET %s missing %q", tc.path, tc.wantContain)
+		for _, sub := range tc.wantContain {
+			if !strings.Contains(rec.Body.String(), sub) {
+				t.Errorf("GET %s missing %q", tc.path, sub)
+			}
 		}
 		if tc.wantCode == http.StatusOK && rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("GET %s missing nosniff header", tc.path)

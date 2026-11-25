@@ -37,12 +37,44 @@ Assign `low`, `medium`, or `high`:
    ```sh
    mill slice update --id S-NN --risk low|medium|high
    ```
-2. Paste this block into the PR description:
+2. Paste this **visual, 5-second-scannable** block into the PR description (never dump prose paragraphs or comma-separated test lists into the main view):
+   - Use `🟢 LOW` + `[!TIP]`, `🟡 MEDIUM` + `[!WARNING]`, or `🔴 HIGH` + `[!CAUTION]`.
+   - Keep every table cell ≤ 12 words so the human's eye jumps straight to non-green rows.
+   - Include a compact **Mermaid diagram** (≤ 6 nodes) for any `MEDIUM` or `HIGH` PR showing blast radius & trust boundaries (omit for trivial `LOW` docs PRs).
+   - List **at most 3 files** under **Where to Focus Review** pointing directly at the riskiest code.
+   - Put per-package coverage numbers and test names inside the collapsible `<details>` block.
+
    ```markdown
-   ### Merge Risk: `<low|medium|high>`
-   - **Alignment:** <evidence>
-   - **Impact:** <blast radius & migration notes>
-   - **Verification:** <commands run after final edit + coverage/UI check>
-   - **Rollback cost:** <revert/redeploy notes>
-   - **Error detection:** <negative/edge tests & failure modes>
+   ### <🟢|🟡|🔴> Merge Risk: `<LOW|MEDIUM|HIGH>`
+
+   > [!<TIP|WARNING|CAUTION>]
+   > **Why `<LOW|MEDIUM|HIGH>`:** <1-sentence explanation of the specific risk driver(s).>
+
+   | Dimension | Level | Key Signal |
+   |---|:---:|---|
+   | 🧭 **Alignment** | <🟢\|🟡\|🔴> | <≤ 12 words: footprint & Dependency Rule status> |
+   | 💥 **Impact** | <🟢\|🟡\|🔴> | <≤ 12 words: blast radius, routes, schema/migration> |
+   | ✅ **Verification** | <🟢\|🟡\|🔴> | <≤ 12 words: check.sh, test count, claims, min cov> |
+   | ⏪ **Rollback** | <🟢\|🟡\|🔴> | <≤ 12 words: git revert / additive vs destructive> |
+   | 🩺 **Error Detection** | <🟢\|🟡\|🔴> | <≤ 12 words: key negative/edge/race test coverage> |
+
+   #### Blast Radius & Trust Boundaries
+   ```mermaid
+   flowchart LR
+     A["Caller / Entrypoint"] -->|"auth / contract"| B["Changed Component<br/>(NEW or MODIFIED)"]
+     B -->|"persistence / side effect"| C[("SQLite / Store")]
+   ```
+
+   #### 👀 Where to Focus Review
+   - **<Concern 1>:** `<path/to/file.go>` (<what to check>)
+   - **<Concern 2>:** `<path/to/file.go>` (<what to check>)
+
+   <details>
+   <summary>📊 Detailed Verification & Coverage (click to expand)</summary>
+
+   - `check.sh`: `gofmt`, `go vet`, `<N>` tests PASS (`-race`), `req canon` (`<M>` claims, 0 flags), `req gate` PASS
+   - Coverage: `<pkg1> XX.X%` · `<pkg2> XX.X%` · ...
+   - Verifier / UI check: <Argon verifier result / screenshot note>
+
+   </details>
    ```

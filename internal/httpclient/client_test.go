@@ -84,12 +84,16 @@ func TestHTTPClient_RoundTripAndErrors(t *testing.T) {
 		t.Fatalf("RenewLease: err=%v renewed=%+v", err, renewed)
 	}
 
-	if _, err := c.UpdateSliceState(ctx, "S-20", domain.StateMerged, domain.VerdictGreen, now); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, err := c.UpdateSliceState(ctx, "S-20", domain.StateMerged, domain.VerdictGreen, "", now); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("invalid transition got %v, want ErrInvalidTransition", err)
 	}
-	updated, err := c.UpdateSliceState(ctx, "S-20", domain.StateGreen, domain.VerdictGreen, now)
-	if err != nil || updated.State != domain.StateGreen {
+	updated, err := c.UpdateSliceState(ctx, "S-20", domain.StateGreen, domain.VerdictGreen, domain.RiskMedium, now)
+	if err != nil || updated.State != domain.StateGreen || updated.Risk != domain.RiskMedium {
 		t.Fatalf("UpdateSliceState: err=%v updated=%+v", err, updated)
+	}
+	riskUpdated, err := c.UpdateSliceState(ctx, "S-20", "", "", domain.RiskHigh, now)
+	if err != nil || riskUpdated.Risk != domain.RiskHigh {
+		t.Fatalf("UpdateSliceState risk-only: err=%v updated=%+v", err, riskUpdated)
 	}
 
 	ev, err := c.RecordRun(ctx, domain.RunEvent{

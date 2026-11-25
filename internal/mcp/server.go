@@ -36,7 +36,7 @@ type Store interface {
 	ListSlices(ctx context.Context, stateFilter string) ([]domain.Slice, error)
 	ClaimSlice(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)
 	RenewLease(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)
-	UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, now time.Time) (domain.Slice, error)
+	UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, risk domain.RiskLevel, now time.Time) (domain.Slice, error)
 	RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEvent, error)
 }
 

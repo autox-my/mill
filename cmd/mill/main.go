@@ -227,8 +227,8 @@ func cmdSliceList(dbPath string, args []string, stdout, stderr io.Writer) int {
 		return writeJSON(stdout, stderr, slices)
 	}
 	for _, sl := range slices {
-		fmt.Fprintf(stdout, "%s\t%s\t%s\towner=%s\tverdict=%s\t%s\n",
-			sl.ID, sl.State, sl.Repo, sl.Owner, sl.LastVerdict, sl.Title)
+		fmt.Fprintf(stdout, "%s\t%s\t%s\towner=%s\tverdict=%s\trisk=%s\t%s\n",
+			sl.ID, sl.State, sl.Repo, sl.Owner, sl.LastVerdict, sl.Risk, sl.Title)
 	}
 	return 0
 }
@@ -277,6 +277,7 @@ func cmdSliceUpdate(dbPath string, args []string, stdout, stderr io.Writer) int 
 	branch := fs.String("branch", "", "optional git branch to extract slice id (e.g. feature/s-01-foo -> S-01)")
 	state := fs.String("state", "", "next state")
 	verdict := fs.String("verdict", "", "optional verdict")
+	risk := fs.String("risk", "", "optional merge risk (low|medium|high)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -288,12 +289,12 @@ func cmdSliceUpdate(dbPath string, args []string, stdout, stderr io.Writer) int 
 	defer st.Close()
 
 	resolvedID := ingest.ResolveSliceID(*id, *branch)
-	sl, err := st.UpdateSliceState(context.Background(), resolvedID, domain.SliceState(*state), domain.Verdict(*verdict), time.Now().UTC())
+	sl, err := st.UpdateSliceState(context.Background(), resolvedID, domain.SliceState(*state), domain.Verdict(*verdict), domain.RiskLevel(*risk), time.Now().UTC())
 	if err != nil {
 		fmt.Fprintf(stderr, "slice update: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "%s\tstate=%s\tverdict=%s\n", sl.ID, sl.State, sl.LastVerdict)
+	fmt.Fprintf(stdout, "%s\tstate=%s\tverdict=%s\trisk=%s\n", sl.ID, sl.State, sl.LastVerdict, sl.Risk)
 	return 0
 }
 

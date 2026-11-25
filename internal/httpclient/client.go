@@ -95,11 +95,12 @@ func (c *Client) postLease(ctx context.Context, id, action, owner string, ttl ti
 	return out, err
 }
 
-// UpdateSliceState transitions a slice state and optional verdict on the remote board.
-func (c *Client) UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, _ time.Time) (domain.Slice, error) {
+// UpdateSliceState transitions a slice state and optional verdict/risk on the remote board.
+func (c *Client) UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, risk domain.RiskLevel, _ time.Time) (domain.Slice, error) {
 	payload := map[string]string{
 		"state":   string(next),
 		"verdict": string(verdict),
+		"risk":    string(risk),
 	}
 	var out domain.Slice
 	err := c.doJSON(ctx, http.MethodPost, "/slices/"+url.PathEscape(id)+"/update", payload, &out)

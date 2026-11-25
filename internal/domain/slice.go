@@ -34,6 +34,15 @@ const (
 	VerdictUndecidable Verdict = "UNDECIDABLE"
 )
 
+// RiskLevel represents the human-review merge risk of a slice.
+type RiskLevel string
+
+const (
+	RiskLow    RiskLevel = "low"
+	RiskMedium RiskLevel = "medium"
+	RiskHigh   RiskLevel = "high"
+)
+
 var (
 	ErrNotFound          = errors.New("not found")
 	ErrAlreadyExists     = errors.New("already exists")
@@ -74,6 +83,7 @@ type Slice struct {
 	LeaseExpiresAt *time.Time `json:"lease_expires_at,omitempty"`
 	Attempt        int        `json:"attempt"`
 	LastVerdict    Verdict    `json:"last_verdict"`
+	Risk           RiskLevel  `json:"risk"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }
@@ -125,6 +135,66 @@ func ValidVerdict(v Verdict) bool {
 	return validVerdicts[v]
 }
 
+// ValidRisk reports whether r is a recognized merge risk level.
+func ValidRisk(r RiskLevel) bool {
+	return r == RiskLow || r == RiskMedium || r == RiskHigh
+}
+
+// NormalizeRisk returns r when valid, or RiskLow as the default.
+func NormalizeRisk(r RiskLevel) RiskLevel {
+	if ValidRisk(r) {
+		return r
+	}
+	return RiskLow
+}
+
+// RiskRank returns a numeric ordering weight for comparing risk levels.
+func RiskRank(r RiskLevel) int {
+	switch r {
+	case RiskHigh:
+		return 3
+	case RiskMedium:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// MaxRisk returns the higher of two risk levels, normalizing unknown values to RiskLow.
+func MaxRisk(a, b RiskLevel) RiskLevel {
+	na, nb := NormalizeRisk(a), NormalizeRisk(b)
+	if RiskRank(nb) > RiskRank(na) {
+		return nb
+	}
+	return na
+}
+
+// RunRiskFloor computes the minimum deterministic merge risk implied by a single run event.
+func RunRiskFloor(ev RunEvent) RiskLevel {
+	dir := strings.ToLower(strings.TrimSpace(ev.ReqDiffDirection))
+	if ev.FootprintFindings > 0 || dir == "breaking" || dir == "loosening" {
+		return RiskHigh
+	}
+	if ev.Amendments > 0 || ev.Verdict == VerdictRed || ev.Verdict == VerdictUndecidable {
+		return RiskMedium
+	}
+	return RiskLow
+}
+
+// ComputeRiskFloor folds a slice's run history into its highest deterministic risk floor.
+func ComputeRiskFloor(runs []RunEvent) RiskLevel {
+	floor := RiskLow
+	for _, ev := range runs {
+		floor = MaxRisk(floor, RunRiskFloor(ev))
+	}
+	return floor
+}
+
+// EffectiveRisk clamps current risk to at least the deterministic floor from runs.
+func EffectiveRisk(current RiskLevel, runs []RunEvent) RiskLevel {
+	return MaxRisk(current, ComputeRiskFloor(runs))
+}
+
 // ValidateSliceCreate checks required fields for creating a new slice.
 func ValidateSliceCreate(s Slice) error {
 	if strings.TrimSpace(s.ID) == "" {
@@ -141,6 +211,9 @@ func ValidateSliceCreate(s Slice) error {
 	}
 	if s.LastVerdict != "" && !ValidVerdict(s.LastVerdict) {
 		return fmt.Errorf("%w: unknown verdict %q", ErrInvalidInput, s.LastVerdict)
+	}
+	if s.Risk != "" && !ValidRisk(s.Risk) {
+		return fmt.Errorf("%w: unknown risk %q", ErrInvalidInput, s.Risk)
 	}
 	return nil
 }

@@ -32,7 +32,7 @@ type Store interface {
 	ListSlices(ctx context.Context, stateFilter string) ([]domain.Slice, error)
 	ClaimSlice(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)
 	RenewLease(ctx context.Context, id, owner string, ttl time.Duration, now time.Time) (domain.Slice, error)
-	UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, now time.Time) (domain.Slice, error)
+	UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, risk domain.RiskLevel, now time.Time) (domain.Slice, error)
 	RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEvent, error)
 	ListRuns(ctx context.Context, sliceID string, limit int) ([]domain.RunEvent, error)
 	Stats(ctx context.Context) (domain.StatsSummary, error)
@@ -273,6 +273,7 @@ func (s *server) handleLeaseOp(w http.ResponseWriter, r *http.Request, op leaseF
 type updateRequest struct {
 	State   domain.SliceState `json:"state"`
 	Verdict domain.Verdict    `json:"verdict"`
+	Risk    domain.RiskLevel  `json:"risk"`
 }
 
 func (s *server) handleUpdateSlice(w http.ResponseWriter, r *http.Request) {
@@ -280,7 +281,7 @@ func (s *server) handleUpdateSlice(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	updated, err := s.store.UpdateSliceState(r.Context(), r.PathValue("id"), req.State, req.Verdict, time.Now().UTC())
+	updated, err := s.store.UpdateSliceState(r.Context(), r.PathValue("id"), req.State, req.Verdict, req.Risk, time.Now().UTC())
 	if err != nil {
 		writeError(w, err)
 		return

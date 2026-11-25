@@ -93,4 +93,60 @@ func TestValidateInputs(t *testing.T) {
 	if err := ValidateRunEvent(badEv); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("want ErrInvalidInput, got %v", err)
 	}
+	if err := ValidateSliceCreate(Slice{ID: "S-01", Repo: "r", Title: "t", Risk: "critical"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("want ErrInvalidInput for invalid risk, got %v", err)
+	}
+	if err := ValidateSliceCreate(Slice{ID: "S-01", Repo: "r", Title: "t", Risk: RiskMedium}); err != nil {
+		t.Fatalf("unexpected error for valid risk: %v", err)
+	}
+}
+
+func TestRiskFloorAndOrdering(t *testing.T) {
+	for _, r := range []RiskLevel{RiskLow, RiskMedium, RiskHigh} {
+		if !ValidRisk(r) {
+			t.Errorf("expected ValidRisk(%q) = true", r)
+		}
+	}
+	if ValidRisk("critical") || ValidRisk("") {
+		t.Error("expected invalid/empty risk to return false from ValidRisk")
+	}
+
+	cases := []struct {
+		name string
+		ev   RunEvent
+		want RiskLevel
+	}{
+		{"clean green", RunEvent{Verdict: VerdictGreen}, RiskLow},
+		{"amendments", RunEvent{Verdict: VerdictGreen, Amendments: 1}, RiskMedium},
+		{"red verdict", RunEvent{Verdict: VerdictRed}, RiskMedium},
+		{"undecidable verdict", RunEvent{Verdict: VerdictUndecidable}, RiskMedium},
+		{"footprint findings", RunEvent{Verdict: VerdictGreen, FootprintFindings: 1}, RiskHigh},
+		{"req diff breaking", RunEvent{Verdict: VerdictGreen, ReqDiffDirection: "breaking"}, RiskHigh},
+		{"req diff loosening mixed case", RunEvent{Verdict: VerdictGreen, ReqDiffDirection: "Loosening"}, RiskHigh},
+		{"findings overrides amendments", RunEvent{Verdict: VerdictRed, Amendments: 2, FootprintFindings: 1}, RiskHigh},
+	}
+	for _, tc := range cases {
+		if got := RunRiskFloor(tc.ev); got != tc.want {
+			t.Errorf("%s: RunRiskFloor = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	runsWithFindings := []RunEvent{
+		{Verdict: VerdictGreen},
+		{Verdict: VerdictGreen, Amendments: 1},
+		{Verdict: VerdictGreen, FootprintFindings: 1},
+	}
+	if got := ComputeRiskFloor(runsWithFindings); got != RiskHigh {
+		t.Fatalf("ComputeRiskFloor = %q, want %q", got, RiskHigh)
+	}
+	if got := EffectiveRisk(RiskLow, runsWithFindings); got != RiskHigh {
+		t.Fatalf("EffectiveRisk(low, findings) = %q, want %q", got, RiskHigh)
+	}
+	cleanRuns := []RunEvent{{Verdict: VerdictGreen}}
+	if got := EffectiveRisk(RiskHigh, cleanRuns); got != RiskHigh {
+		t.Fatalf("EffectiveRisk(high, clean) = %q, want %q", got, RiskHigh)
+	}
+	if got := EffectiveRisk("", nil); got != RiskLow {
+		t.Fatalf("EffectiveRisk(empty, nil) = %q, want %q", got, RiskLow)
+	}
 }

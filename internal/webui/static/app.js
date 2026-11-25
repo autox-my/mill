@@ -80,6 +80,17 @@ function formatLease(sl) {
   return { text: `${sl.owner} · ${diffMin}m left`, warn: diffMin <= 5 };
 }
 
+const RISK_ORDER = { high: 3, medium: 2, low: 1 };
+
+function riskRank(r) {
+  return RISK_ORDER[r || "low"] || 1;
+}
+
+function riskBadge(r) {
+  const val = r && RISK_ORDER[r] ? r : "low";
+  return node("span", `risk-badge risk-${val}`, `${val} risk`);
+}
+
 function verdictBadge(v) {
   const val = v || "pending";
   return node("span", `verdict verdict-${val}`, val);
@@ -95,7 +106,7 @@ function currentFilters() {
 function matchesFilter(sl, { repo, query }) {
   if (repo && sl.repo !== repo) return false;
   if (!query) return true;
-  const hay = [sl.id, sl.title, sl.repo, sl.owner, sl.branch, ...(sl.claims || [])]
+  const hay = [sl.id, sl.title, sl.repo, sl.owner, sl.branch, sl.risk, ...(sl.claims || [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -131,6 +142,9 @@ function renderBoard() {
   const visible = state.slices.filter((sl) => matchesFilter(sl, filters));
   const lanes = LANES.map((laneDef) => {
     const items = visible.filter((sl) => laneDef.states.includes(sl.state));
+    if (laneDef.key === "human") {
+      items.sort((a, b) => riskRank(b.risk) - riskRank(a.risk));
+    }
     const lane = node("section", laneDef.highlight ? "lane lane-human" : "lane");
     const head = node("div", "lane-head");
     head.append(node("h2", "lane-title", laneDef.title), node("span", "lane-count", items.length));
@@ -146,10 +160,13 @@ function renderBoard() {
 }
 
 function buildSliceCard(sl) {
-  const btn = node("button", "slice-card");
+  const isHighRisk = (sl.risk || "low") === "high";
+  const btn = node("button", isHighRisk ? "slice-card slice-card-high-risk" : "slice-card");
   btn.type = "button";
   const top = node("div", "card-top");
-  top.append(node("span", "mono", sl.id), verdictBadge(sl.last_verdict));
+  const badges = node("span", "card-badges");
+  badges.append(riskBadge(sl.risk), verdictBadge(sl.last_verdict));
+  top.append(node("span", "mono", sl.id), badges);
 
   const title = node("div", "card-title", sl.title);
   const metaText = [sl.repo, ...(sl.claims || [])].filter(Boolean).join(" · ");
@@ -292,6 +309,7 @@ async function openSliceDrawer(sl) {
     ["Repository", sl.repo],
     ["State", sl.state],
     ["Verdict", sl.last_verdict],
+    ["Merge risk", sl.risk || "low"],
     ["Branch", sl.branch || "—"],
     ["Intent lock", sl.intent_lock || "—"],
     ["Claims", (sl.claims || []).join(", ") || "—"],

@@ -1,0 +1,14 @@
+schema: req.claim/4
+claim_id: REQ-0012
+statement: "The store shall persist slice merge risk and clamp risk updates to the deterministic run floor."
+applicability: []
+relations: []
+rationale:
+  source: "docs/handoffs/2026-11-26-s02-handoff.md"
+  date: 2026-11-26
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/domain::TestRiskFloorAndOrdering"
+  - "github.com/autox-my/mill/internal/store::TestStore_MergeRiskFloorAndMigration"
+  - "github.com/autox-my/mill/internal/httpapi::TestUpdateSlice_RiskFloor"

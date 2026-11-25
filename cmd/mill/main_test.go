@@ -74,12 +74,22 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 		t.Fatalf("slice update green failed (%d): %s %s", code, out, errOut)
 	}
 
+	code, out, errOut = runCLI(t, dbPath, "slice", "update", "--id", "S-10", "--risk", "medium")
+	if code != 0 || !strings.Contains(out, "risk=medium") {
+		t.Fatalf("slice update --risk failed (%d): %s %s", code, out, errOut)
+	}
+
+	code, out, errOut = runCLI(t, dbPath, "slice", "list", "--state", "green")
+	if code != 0 || !strings.Contains(out, "risk=medium") {
+		t.Fatalf("slice list text missing risk=medium (%d): %s %s", code, out, errOut)
+	}
+
 	code, out, errOut = runCLI(t, dbPath, "slice", "list", "--state", "green", "--json")
 	if code != 0 {
 		t.Fatalf("slice list failed (%d): %s %s", code, out, errOut)
 	}
 	var slices []domain.Slice
-	if err := json.Unmarshal([]byte(out), &slices); err != nil || len(slices) != 1 || slices[0].ID != "S-10" {
+	if err := json.Unmarshal([]byte(out), &slices); err != nil || len(slices) != 1 || slices[0].ID != "S-10" || slices[0].Risk != domain.RiskMedium {
 		t.Fatalf("unexpected slice list json: err=%v out=%s", err, out)
 	}
 
@@ -97,6 +107,12 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 	)
 	if code != 0 {
 		t.Fatalf("run record failed (%d): %s %s", code, out, errOut)
+	}
+
+	// Deterministic floor from amendments=1 prevents lowering risk below medium.
+	code, out, errOut = runCLI(t, dbPath, "slice", "update", "--id", "S-10", "--risk", "low")
+	if code != 0 || !strings.Contains(out, "risk=medium") {
+		t.Fatalf("expected risk floor medium (%d): %s %s", code, out, errOut)
 	}
 
 	code, out, errOut = runCLI(t, dbPath, "run", "list", "--slice", "S-10", "--json")

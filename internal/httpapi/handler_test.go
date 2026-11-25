@@ -450,3 +450,61 @@ func TestObserverReport(t *testing.T) {
 		t.Fatalf("unexpected observer report body: %s", rec.Body.String())
 	}
 }
+
+// Proves REQ-0012: HTTP update endpoint accepts risk and enforces the deterministic run risk floor.
+func TestUpdateSlice_RiskFloor(t *testing.T) {
+	_, h := newTestServer(t, testToken)
+	auth := authHeader(testToken)
+
+	rec := doReq(t, h, http.MethodPost, "/slices", auth, domain.Slice{
+		ID: "SL-RISK", Repo: "autox-my/mill", Title: "Risk HTTP test",
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Risk-only update succeeds.
+	rec = doReq(t, h, http.MethodPost, "/slices/SL-RISK/update", auth, map[string]any{
+		"risk": "medium",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("risk-only update: got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var sl domain.Slice
+	if err := json.NewDecoder(rec.Body).Decode(&sl); err != nil {
+		t.Fatalf("decode slice: %v", err)
+	}
+	if sl.Risk != domain.RiskMedium || sl.State != domain.StateSpec {
+		t.Fatalf("unexpected slice after risk update: %+v", sl)
+	}
+
+	// Invalid risk returns 400.
+	rec = doReq(t, h, http.MethodPost, "/slices/SL-RISK/update", auth, map[string]any{
+		"risk": "bogus",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid risk: got %d, want 400", rec.Code)
+	}
+
+	// Recording a run with footprint_findings=1 raises the floor to high.
+	ev := domain.RunEvent{
+		SliceID: "SL-RISK", Harness: "codex", Phase: "verify", Verdict: domain.VerdictGreen, FootprintFindings: 1,
+	}
+	if rec = doReq(t, h, http.MethodPost, "/runs", auth, ev); rec.Code != http.StatusCreated {
+		t.Fatalf("record run: got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// Attempting to lower risk to low is clamped to high.
+	rec = doReq(t, h, http.MethodPost, "/slices/SL-RISK/update", auth, map[string]any{
+		"risk": "low",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("clamped update: got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&sl); err != nil {
+		t.Fatalf("decode clamped slice: %v", err)
+	}
+	if sl.Risk != domain.RiskHigh {
+		t.Fatalf("expected clamped risk=high, got %q", sl.Risk)
+	}
+}

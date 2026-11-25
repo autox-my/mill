@@ -79,12 +79,13 @@ func (s *Server) buildTools() []toolDef {
 		},
 		{
 			Name:        "update_slice",
-			Description: "Transition a slice to a new lifecycle state and optionally record a verdict.",
+			Description: "Transition a slice to a new lifecycle state and optionally record a verdict or merge risk.",
 			InputSchema: objectSchema(map[string]any{
 				"slice_id": stringProp("Slice identifier"),
-				"state":    stringProp("Target slice state"),
+				"state":    stringProp("Optional target slice state"),
 				"verdict":  stringProp("Optional verdict (pending, GREEN, RED, UNDECIDABLE)"),
-			}, []string{"slice_id", "state"}),
+				"risk":     stringProp("Optional merge risk (low, medium, high); clamped to deterministic floor"),
+			}, []string{"slice_id"}),
 			call: s.callUpdateSlice,
 		},
 		{
@@ -248,6 +249,7 @@ func (s *Server) callUpdateSlice(ctx context.Context, raw json.RawMessage) (any,
 		SliceID string `json:"slice_id"`
 		State   string `json:"state"`
 		Verdict string `json:"verdict"`
+		Risk    string `json:"risk"`
 	}
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
@@ -255,10 +257,10 @@ func (s *Server) callUpdateSlice(ctx context.Context, raw json.RawMessage) (any,
 	if err := requireNonEmpty("slice_id", args.SliceID); err != nil {
 		return nil, err
 	}
-	if err := requireNonEmpty("state", args.State); err != nil {
-		return nil, err
+	if strings.TrimSpace(args.State) == "" && strings.TrimSpace(args.Risk) == "" {
+		return nil, &rpcError{Code: codeInvalidParams, Message: "missing required argument: state or risk"}
 	}
-	return s.store.UpdateSliceState(ctx, args.SliceID, domain.SliceState(args.State), domain.Verdict(args.Verdict), time.Now().UTC())
+	return s.store.UpdateSliceState(ctx, args.SliceID, domain.SliceState(args.State), domain.Verdict(args.Verdict), domain.RiskLevel(args.Risk), time.Now().UTC())
 }
 
 func (s *Server) callRecordRun(ctx context.Context, raw json.RawMessage) (any, error) {

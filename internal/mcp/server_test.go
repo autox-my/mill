@@ -271,7 +271,7 @@ func (failingStore) ClaimSlice(context.Context, string, string, time.Duration, t
 func (failingStore) RenewLease(context.Context, string, string, time.Duration, time.Time) (domain.Slice, error) {
 	return domain.Slice{}, errors.New("db connection lost")
 }
-func (failingStore) UpdateSliceState(context.Context, string, domain.SliceState, domain.Verdict, time.Time) (domain.Slice, error) {
+func (failingStore) UpdateSliceState(context.Context, string, domain.SliceState, domain.Verdict, domain.RiskLevel, time.Time) (domain.Slice, error) {
 	return domain.Slice{}, errors.New("db connection lost")
 }
 func (failingStore) RecordRun(context.Context, domain.RunEvent) (domain.RunEvent, error) {
@@ -309,5 +309,36 @@ func TestMCP_CreateSlice(t *testing.T) {
 	}
 	if resps[2].Error == nil || resps[2].Error.Code != -32602 {
 		t.Fatalf("expected -32602 for missing title, got %+v", resps[2].Error)
+	}
+}
+
+func TestMCP_UpdateSliceRiskAndFloor(t *testing.T) {
+	st := openTestStore(t)
+	seedSlice(t, st, "S-RISK")
+	srv := mcp.NewServer(st)
+
+	resps := runRPC(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"update_slice","arguments":{"slice_id":"S-RISK","risk":"medium"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"update_slice","arguments":{"slice_id":"S-RISK"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"record_run","arguments":{"slice_id":"S-RISK","harness":"claude","phase":"verify","verdict":"GREEN","footprint_findings":1}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"update_slice","arguments":{"slice_id":"S-RISK","risk":"low"}}}`,
+	)
+	if len(resps) != 4 {
+		t.Fatalf("expected 4 responses, got %d", len(resps))
+	}
+	r1 := decodeToolResult(t, resps[0])
+	if r1.IsError || !strings.Contains(r1.Content[0].Text, `"risk":"medium"`) {
+		t.Fatalf("expected risk=medium, got %+v", r1)
+	}
+	if resps[1].Error == nil || resps[1].Error.Code != -32602 {
+		t.Fatalf("expected -32602 when both state and risk are missing, got %+v", resps[1].Error)
+	}
+	r3 := decodeToolResult(t, resps[2])
+	if r3.IsError {
+		t.Fatalf("expected record_run success, got %+v", r3)
+	}
+	r4 := decodeToolResult(t, resps[3])
+	if r4.IsError || !strings.Contains(r4.Content[0].Text, `"risk":"high"`) {
+		t.Fatalf("expected clamped risk=high, got %+v", r4)
 	}
 }

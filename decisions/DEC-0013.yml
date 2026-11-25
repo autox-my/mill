@@ -1,0 +1,18 @@
+# DEC-0013: accept REQ-0013 for the v0.2.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0013
+kind: accept
+claim_id: REQ-0013
+address: 4b473e72b40204ca0c6d8574f2101ab0f7c22971ea8bbddc8f14a3baad4d809e
+actor: fdx
+role: maintainer
+date: 2026-11-26
+note: >-
+  I accept REQ-0013 as written at this address: "The HTTP API shall authenticate Forgejo and Pulse webhooks in constant time, deduplicate by delivery ID, and wrap payloads in an untrusted envelope."
+  Proven by its linked passing tests at S-03 / v0.2.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "eb3f45bc002fa485f657f323fee2d1c32e657f1680e6a046318466c4caae4fda"
+hash: "60033c59e70f1f4d181ad6c8f8cb62c235c6299862c5d3d61e10368f88e80a86"

@@ -1,0 +1,18 @@
+# DEC-0012: accept REQ-0012 for the v0.2.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0012
+kind: accept
+claim_id: REQ-0012
+address: 225a811c89bf3c149963f76ce863b9ce9586501d652cd850d3117dec993cd0c5
+actor: fdx
+role: maintainer
+date: 2026-11-26
+note: >-
+  I accept REQ-0012 as written at this address: "The store shall persist slice merge risk and clamp risk updates to the deterministic run floor."
+  Proven by its linked passing tests at S-02 / v0.2.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "ab7dbc33943291fec10fa0f0c7b5b4c5451109b072676b07d63b70b68c7e94e7"
+hash: "eb3f45bc002fa485f657f323fee2d1c32e657f1680e6a046318466c4caae4fda"

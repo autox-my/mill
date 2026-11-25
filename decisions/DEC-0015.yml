@@ -1,0 +1,18 @@
+# DEC-0015: accept REQ-0015 for the v0.2.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0015
+kind: accept
+claim_id: REQ-0015
+address: 5ddb33090150e47e39e14164cf824ba218907a9e06038532c40497f9808197a9
+actor: fdx
+role: maintainer
+date: 2026-11-26
+note: >-
+  I accept REQ-0015 as written at this address: "The store shall persist optional run token and cost telemetry and compute cycle time and model breakdowns."
+  Proven by its linked passing tests at S-04 / v0.2.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "8ae523c34caf682982cbd15cb5e959e89e4bebfdd0dff63eb92c378096d3e603"
+hash: "e71c62e8d3731893da93b0c5195b581818aaeb1c6d5b4bc84da32a6240e01a96"

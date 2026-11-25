@@ -1,0 +1,18 @@
+# DEC-0014: accept REQ-0014 for the v0.2.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0014
+kind: accept
+claim_id: REQ-0014
+address: ad862f48a28f91fedfb828480c3f6b82974f71d38bda74fbed674d0ae1527799
+actor: fdx
+role: maintainer
+date: 2026-11-26
+note: >-
+  I accept REQ-0014 as written at this address: "The MCP server shall expose the embedded board HTML as the ui://mill/board resource via resources/list and resources/read."
+  Proven by its linked passing tests at S-03 / v0.2.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "60033c59e70f1f4d181ad6c8f8cb62c235c6299862c5d3d61e10368f88e80a86"
+hash: "8ae523c34caf682982cbd15cb5e959e89e4bebfdd0dff63eb92c378096d3e603"

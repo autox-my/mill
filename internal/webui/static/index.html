@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>mill</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main id="login-view" class="login-shell" hidden>
+    <section class="login-card" aria-labelledby="login-title">
+      <h1 id="login-title" class="wordmark">mill</h1>
+      <p class="login-sub">Enter your API token to open the read-only slice board and run ledger.</p>
+      <form id="login-form" class="login-form">
+        <label class="field-label" for="token-input">API token</label>
+        <input id="token-input" name="token" type="password" autocomplete="current-password" required placeholder="MILL_API_TOKEN">
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn-primary">Sign in</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="app-view" class="app-shell" hidden>
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="wordmark">mill</span>
+        <nav class="view-tabs" aria-label="Primary views">
+          <button type="button" class="tab-btn is-active" data-view="board">Board</button>
+          <button type="button" class="tab-btn" data-view="ledger">Ledger</button>
+          <button type="button" class="tab-btn" data-view="hotspots">Hotspots</button>
+        </nav>
+      </div>
+      <div class="topbar-controls">
+        <label class="sr-only" for="repo-filter">Filter by repository</label>
+        <select id="repo-filter" class="control-select">
+          <option value="">All repositories</option>
+        </select>
+        <label class="sr-only" for="search-input">Search slices or runs</label>
+        <input id="search-input" class="control-input" type="search" placeholder="Filter ( / )">
+        <span id="sync-status" class="sync-status" aria-live="polite">Synced</span>
+        <button type="button" id="refresh-btn" class="btn-ghost" title="Refresh now">Refresh</button>
+        <button type="button" id="theme-btn" class="btn-ghost" title="Toggle color theme">Theme</button>
+        <button type="button" id="logout-btn" class="btn-ghost">Sign out</button>
+      </div>
+    </header>
+
+    <section class="kpi-strip" aria-label="Telemetry summary">
+      <div class="kpi-card">
+        <span class="kpi-label">Active slices</span>
+        <strong id="kpi-slices" class="kpi-value">0</strong>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Check pass rate</span>
+        <strong id="kpi-pass-rate" class="kpi-value">—</strong>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Amendments</span>
+        <strong id="kpi-amendments" class="kpi-value">0</strong>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Footprint findings</span>
+        <strong id="kpi-findings" class="kpi-value">0</strong>
+      </div>
+    </section>
+
+    <section id="board-panel" class="panel" aria-label="Slice board">
+      <div id="board-grid" class="board-grid"></div>
+    </section>
+
+    <section id="ledger-panel" class="panel" aria-label="Run ledger" hidden>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Slice</th>
+              <th>Harness</th>
+              <th>Model</th>
+              <th>Phase</th>
+              <th>Verdict</th>
+              <th class="num">Duration</th>
+              <th class="num">Amendments</th>
+              <th class="num">Findings</th>
+              <th>Req diff</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="ledger-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="hotspots-panel" class="panel" aria-label="Observer hotspots" hidden>
+      <div class="hotspots-head">
+        <div>
+          <h2 class="section-title">Observer hotspots</h2>
+          <p id="hotspots-meta" class="section-sub">Read-only ledger analysis grounded in exact slice IDs.</p>
+        </div>
+        <button type="button" id="copy-report-btn" class="btn-primary">Copy report JSON</button>
+      </div>
+      <div class="hotspots-grid">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Slice</th>
+                <th>Title</th>
+                <th class="num">Runs</th>
+                <th class="num">Red</th>
+                <th class="num">Amendments</th>
+                <th class="num">Findings</th>
+              </tr>
+            </thead>
+            <tbody id="hotspots-tbody"></tbody>
+          </table>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Failure pattern</th>
+                <th class="num">Count</th>
+                <th>Slices</th>
+              </tr>
+            </thead>
+            <tbody id="patterns-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <dialog id="slice-drawer" class="drawer" aria-labelledby="drawer-id">
+    <div class="drawer-inner">
+      <header class="drawer-header">
+        <div>
+          <h2 id="drawer-id" class="mono drawer-title"></h2>
+          <p id="drawer-subtitle" class="drawer-subtitle"></p>
+        </div>
+        <button type="button" id="drawer-close" class="btn-ghost" aria-label="Close details">Close</button>
+      </header>
+      <dl id="drawer-meta" class="meta-grid"></dl>
+      <div class="drawer-actions">
+        <button type="button" id="copy-claim-cmd" class="btn-ghost">Copy claim CLI</button>
+        <button type="button" id="copy-branch-btn" class="btn-ghost">Copy branch</button>
+      </div>
+      <h3 class="drawer-section-title">Run timeline</h3>
+      <div id="drawer-runs" class="run-timeline"></div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

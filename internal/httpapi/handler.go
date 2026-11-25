@@ -1,9 +1,12 @@
-// Package httpapi exposes a bearer-authenticated JSON HTTP API over the mill store.
+// Package httpapi exposes a bearer- and cookie-authenticated JSON HTTP API over the mill store.
 package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,9 +16,14 @@ import (
 	"time"
 
 	"github.com/autox-my/mill/internal/domain"
+	"github.com/autox-my/mill/internal/observer"
 )
 
-const maxBodyBytes = 1 << 20 // 1 MiB
+const (
+	maxBodyBytes      = 1 << 20 // 1 MiB
+	sessionCookieName = "mill_session"
+	sessionMaxAgeSec  = 30 * 24 * 3600
+)
 
 // Store defines the persistence operations required by the HTTP API.
 type Store interface {
@@ -32,13 +40,15 @@ type Store interface {
 
 // Config configures the HTTP API handler.
 type Config struct {
-	Store    Store
-	APIToken string
+	Store     Store
+	APIToken  string
+	UIHandler http.Handler
 }
 
 type server struct {
-	store    Store
-	apiToken string
+	store         Store
+	apiToken      string
+	sessionDigest string
 }
 
 // NewHandler constructs a bearer-authenticated HTTP handler for the mill API.
@@ -50,41 +60,135 @@ func NewHandler(store Store, apiToken string) http.Handler {
 	})
 }
 
-// NewHandlerWithConfig constructs a bearer-authenticated HTTP handler from Config.
+// NewHandlerWithConfig constructs an HTTP handler with optional embedded UI routes.
 func NewHandlerWithConfig(cfg Config) http.Handler {
 	s := &server{
-		store:    cfg.Store,
-		apiToken: cfg.APIToken,
+		store:         cfg.Store,
+		apiToken:      cfg.APIToken,
+		sessionDigest: deriveSessionToken(cfg.APIToken),
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /slices", s.handleListSlices)
-	mux.HandleFunc("GET /slices/{id}", s.handleGetSlice)
-	mux.HandleFunc("POST /slices", s.handleCreateSlice)
-	mux.HandleFunc("POST /slices/{id}/claim", s.handleClaimSlice)
-	mux.HandleFunc("POST /slices/{id}/renew", s.handleRenewLease)
-	mux.HandleFunc("POST /slices/{id}/update", s.handleUpdateSlice)
-	mux.HandleFunc("GET /runs", s.handleListRuns)
-	mux.HandleFunc("POST /runs", s.handleRecordRun)
-	mux.HandleFunc("GET /stats", s.handleStats)
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("GET /slices", s.handleListSlices)
+	apiMux.HandleFunc("GET /slices/{id}", s.handleGetSlice)
+	apiMux.HandleFunc("POST /slices", s.handleCreateSlice)
+	apiMux.HandleFunc("POST /slices/{id}/claim", s.handleClaimSlice)
+	apiMux.HandleFunc("POST /slices/{id}/renew", s.handleRenewLease)
+	apiMux.HandleFunc("POST /slices/{id}/update", s.handleUpdateSlice)
+	apiMux.HandleFunc("GET /runs", s.handleListRuns)
+	apiMux.HandleFunc("POST /runs", s.handleRecordRun)
+	apiMux.HandleFunc("GET /stats", s.handleStats)
+	apiMux.HandleFunc("GET /observer/report", s.handleObserverReport)
 
-	return s.authMiddleware(mux)
+	rootMux := http.NewServeMux()
+	rootMux.HandleFunc("POST /auth/login", s.handleAuthLogin)
+	rootMux.HandleFunc("POST /auth/logout", s.handleAuthLogout)
+	rootMux.HandleFunc("GET /auth/session", s.handleAuthSession)
+	if cfg.UIHandler != nil {
+		rootMux.Handle("GET /{$}", cfg.UIHandler)
+		rootMux.Handle("GET /static/", cfg.UIHandler)
+	}
+	rootMux.Handle("/", s.authMiddleware(apiMux))
+
+	return rootMux
+}
+
+func deriveSessionToken(apiToken string) string {
+	if apiToken == "" {
+		return ""
+	}
+	mac := hmac.New(sha256.New, []byte(apiToken))
+	mac.Write([]byte("mill-web-session-v1"))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *server) isConfigured() bool {
+	return s.apiToken != "" && s.store != nil
+}
+
+func (s *server) isAuthenticated(r *http.Request) bool {
+	if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok && tok != "" {
+		if subtle.ConstantTimeCompare([]byte(tok), []byte(s.apiToken)) == 1 {
+			return true
+		}
+	}
+	if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
+		if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.sessionDigest)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.apiToken == "" || s.store == nil {
+		if !s.isConfigured() {
 			writeJSON(w, http.StatusServiceUnavailable, errorBody("api server is not configured"))
 			return
 		}
-		tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || tok == "" || subtle.ConstantTimeCompare([]byte(tok), []byte(s.apiToken)) != 1 {
+		if !s.isAuthenticated(r) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeJSON(w, http.StatusUnauthorized, errorBody("unauthorized"))
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if !s.isConfigured() {
+		writeJSON(w, http.StatusServiceUnavailable, errorBody("api server is not configured"))
+		return
+	}
+	var req struct {
+		Token string `json:"token"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Token == "" || subtle.ConstantTimeCompare([]byte(req.Token), []byte(s.apiToken)) != 1 {
+		writeJSON(w, http.StatusUnauthorized, errorBody("invalid token"))
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    s.sessionDigest,
+		Path:     "/",
+		MaxAge:   sessionMaxAgeSec,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
+}
+
+func (s *server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": false})
+}
+
+func (s *server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
+	if !s.isConfigured() {
+		writeJSON(w, http.StatusServiceUnavailable, errorBody("api server is not configured"))
+		return
+	}
+	if !s.isAuthenticated(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]bool{"authenticated": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"authenticated": true})
+}
+
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func (s *server) handleListSlices(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +327,30 @@ func (s *server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (s *server) handleObserverReport(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	sliceID := q.Get("slice_id")
+	limit, err := parseLimit(q.Get("limit"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	if limit == 0 {
+		limit = 100
+	}
+	runs, err := s.store.ListRuns(r.Context(), sliceID, limit)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	slices, err := s.store.ListSlices(r.Context(), "")
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, observer.AnalyzeWithSlices(runs, slices))
 }
 
 func parseTTL(ttlSeconds int, ttlStr string) (time.Duration, error) {

@@ -22,6 +22,7 @@ import (
 	"github.com/autox-my/mill/internal/mcp"
 	"github.com/autox-my/mill/internal/observer"
 	"github.com/autox-my/mill/internal/store"
+	"github.com/autox-my/mill/internal/webui"
 )
 
 const (
@@ -452,8 +453,12 @@ func cmdServe(dbPath string, args []string, _ io.Reader, stdout, stderr io.Write
 	defer st.Close()
 
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           httpapi.NewHandler(st, token),
+		Addr: *addr,
+		Handler: httpapi.NewHandlerWithConfig(httpapi.Config{
+			Store:     st,
+			APIToken:  token,
+			UIHandler: webui.Handler(),
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

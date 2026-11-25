@@ -348,3 +348,105 @@ func TestRuns_AndStats(t *testing.T) {
 		t.Fatalf("unexpected stats: %+v", stats)
 	}
 }
+
+// Proves REQ-0011: browser sessions authenticate via constant-time cookie login and UI shell leaks no data.
+func TestAuth_CookieLoginSessionAndLogout(t *testing.T) {
+	uiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<!doctype html><html><body>mill shell</body></html>"))
+	})
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open memory store: %v", err)
+	}
+	defer st.Close()
+
+	h := httpapi.NewHandlerWithConfig(httpapi.Config{
+		Store:     st,
+		APIToken:  testToken,
+		UIHandler: uiHandler,
+	})
+
+	// Unauthenticated GET / serves UI shell; /auth/session and /stats fail closed with 401.
+	rec := doReq(t, h, http.MethodGet, "/", "", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "mill shell") {
+		t.Fatalf("GET / got %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doReq(t, h, http.MethodGet, "/auth/session", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth /auth/session got %d, want 401", rec.Code)
+	}
+	if rec := doReq(t, h, http.MethodGet, "/stats", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth /stats got %d, want 401", rec.Code)
+	}
+
+	// Wrong token on /auth/login returns 401 and sets no cookie.
+	rec = doReq(t, h, http.MethodPost, "/auth/login", "", map[string]string{"token": "wrong"})
+	if rec.Code != http.StatusUnauthorized || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("wrong login got %d cookies=%v", rec.Code, rec.Result().Cookies())
+	}
+
+	// Valid token returns 200 and sets HttpOnly SameSite=Strict cookie; cookie never equals raw token.
+	rec = doReq(t, h, http.MethodPost, "/auth/login", "", map[string]string{"token": testToken})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid login got %d (%s)", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "mill_session" || !cookies[0].HttpOnly || cookies[0].Value == testToken {
+		t.Fatalf("unexpected session cookie: %+v", cookies)
+	}
+
+	// Cookie grants access to /auth/session and /stats.
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	req.AddCookie(cookies[0])
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie /stats got %d, want 200", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+	req.AddCookie(cookies[0])
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie /auth/session got %d, want 200", rec.Code)
+	}
+
+	// Logout clears the cookie.
+	rec = doReq(t, h, http.MethodPost, "/auth/logout", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logout got %d", rec.Code)
+	}
+	cleared := rec.Result().Cookies()
+	if len(cleared) != 1 || cleared[0].MaxAge != -1 {
+		t.Fatalf("expected cleared cookie, got %+v", cleared)
+	}
+}
+
+// Proves REQ-0011: observer report endpoint requires auth and returns grounded hotspot metrics.
+func TestObserverReport(t *testing.T) {
+	_, h := newTestServer(t, testToken)
+	auth := authHeader(testToken)
+
+	// Unauthenticated /observer/report fails closed.
+	if rec := doReq(t, h, http.MethodGet, "/observer/report", "", nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth /observer/report got %d, want 401", rec.Code)
+	}
+
+	sl := domain.Slice{ID: "SL-30", Repo: "autox-my/mill", Title: "Observer test"}
+	if rec := doReq(t, h, http.MethodPost, "/slices", auth, sl); rec.Code != http.StatusCreated {
+		t.Fatalf("create slice: %d %s", rec.Code, rec.Body.String())
+	}
+	ev := domain.RunEvent{SliceID: "SL-30", Harness: "claude-code", Phase: "red", Verdict: domain.VerdictRed, Amendments: 2, FootprintFindings: 1}
+	if rec := doReq(t, h, http.MethodPost, "/runs", auth, ev); rec.Code != http.StatusCreated {
+		t.Fatalf("create run: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec := doReq(t, h, http.MethodGet, "/observer/report", auth, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /observer/report got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"SL-30"`) || !strings.Contains(rec.Body.String(), `"red_events":1`) {
+		t.Fatalf("unexpected observer report body: %s", rec.Body.String())
+	}
+}

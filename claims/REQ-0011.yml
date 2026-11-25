@@ -1,0 +1,14 @@
+schema: req.claim/4
+claim_id: REQ-0011
+statement: "The HTTP API shall authenticate browser sessions via constant-time cookie login and serve read-only observer reports only to authenticated callers."
+applicability: []
+relations: []
+rationale:
+  source: "README.md"
+  date: 2026-11-25
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/httpapi::TestAuth_CookieLoginSessionAndLogout"
+  - "github.com/autox-my/mill/internal/httpapi::TestObserverReport"
+  - "github.com/autox-my/mill/internal/webui::TestWebUI_ServesEmbeddedAssets"

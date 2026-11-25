@@ -1,0 +1,14 @@
+schema: req.claim/4
+claim_id: REQ-0014
+statement: "The MCP server shall expose the embedded board HTML as the ui://mill/board resource via resources/list and resources/read."
+applicability: []
+relations: []
+rationale:
+  source: "docs/handoffs/2026-11-26-s02-handoff.md"
+  date: 2026-11-26
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/webui::TestBoardAppHTML_InlinesAssetsAndBootstrap"
+  - "github.com/autox-my/mill/internal/mcp::TestMCP_AppResourceBoard"
+  - "github.com/autox-my/mill/cmd/mill::TestCLI_MCPSubcommand"

@@ -342,3 +342,85 @@ func TestMCP_UpdateSliceRiskAndFloor(t *testing.T) {
 		t.Fatalf("expected clamped risk=high, got %+v", r4)
 	}
 }
+
+func TestMCP_AppResourceBoard(t *testing.T) {
+	st := openTestStore(t)
+	seedSlice(t, st, "S-APP-1")
+	_, err := st.RecordRun(context.Background(), domain.RunEvent{
+		SliceID: "S-APP-1",
+		Harness: "claude",
+		Phase:   "verify",
+		Verdict: domain.VerdictGreen,
+	})
+	if err != nil {
+		t.Fatalf("record run: %v", err)
+	}
+	srv := mcp.NewServer(st)
+
+	resps := runRPC(t, srv,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"resources/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"ui://mill/board"}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"resources/read","params":{"uri":"ui://mill/unknown"}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"resources/read","params":{}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"resources/read","params":"bad"}`,
+	)
+	if len(resps) != 6 {
+		t.Fatalf("expected 6 responses, got %d", len(resps))
+	}
+
+	var initRes struct {
+		Capabilities map[string]any `json:"capabilities"`
+	}
+	if err := json.Unmarshal(resps[0].Result, &initRes); err != nil {
+		t.Fatalf("unmarshal initialize: %v", err)
+	}
+	if _, ok := initRes.Capabilities["resources"]; !ok {
+		t.Fatalf("expected resources capability in initialize, got %+v", initRes.Capabilities)
+	}
+
+	var listRes struct {
+		Resources []struct {
+			URI      string `json:"uri"`
+			Name     string `json:"name"`
+			MimeType string `json:"mimeType"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(resps[1].Result, &listRes); err != nil {
+		t.Fatalf("unmarshal resources/list: %v", err)
+	}
+	if len(listRes.Resources) != 1 || listRes.Resources[0].URI != "ui://mill/board" || listRes.Resources[0].MimeType != "text/html;profile=mcp-app" {
+		t.Fatalf("unexpected resources/list: %+v", listRes)
+	}
+
+	if resps[2].Error != nil {
+		t.Fatalf("unexpected error on resources/read: %+v", resps[2].Error)
+	}
+	var readRes struct {
+		Contents []struct {
+			URI      string `json:"uri"`
+			MimeType string `json:"mimeType"`
+			Text     string `json:"text"`
+		} `json:"contents"`
+	}
+	if err := json.Unmarshal(resps[2].Result, &readRes); err != nil {
+		t.Fatalf("unmarshal resources/read: %v", err)
+	}
+	if len(readRes.Contents) != 1 || readRes.Contents[0].URI != "ui://mill/board" || readRes.Contents[0].MimeType != "text/html;profile=mcp-app" {
+		t.Fatalf("unexpected resources/read contents: %+v", readRes)
+	}
+	html := readRes.Contents[0].Text
+	if !strings.Contains(html, "window.__MILL_BOOTSTRAP__") || !strings.Contains(html, "S-APP-1") {
+		t.Errorf("expected self-contained HTML with bootstrapped slice S-APP-1")
+	}
+
+	if resps[3].Error == nil || resps[3].Error.Code != -32002 {
+		t.Fatalf("expected -32002 for unknown resource, got %+v", resps[3].Error)
+	}
+	if resps[4].Error == nil || resps[4].Error.Code != -32602 {
+		t.Fatalf("expected -32602 for empty uri, got %+v", resps[4].Error)
+	}
+	if resps[5].Error == nil || resps[5].Error.Code != -32602 {
+		t.Fatalf("expected -32602 for invalid params, got %+v", resps[5].Error)
+	}
+}

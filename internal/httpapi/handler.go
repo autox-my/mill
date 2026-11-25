@@ -40,9 +40,10 @@ type Store interface {
 
 // Config configures the HTTP API handler.
 type Config struct {
-	Store     Store
-	APIToken  string
-	UIHandler http.Handler
+	Store          Store
+	APIToken       string
+	UIHandler      http.Handler
+	WebhookHandler http.Handler
 }
 
 type server struct {
@@ -87,6 +88,9 @@ func NewHandlerWithConfig(cfg Config) http.Handler {
 	if cfg.UIHandler != nil {
 		rootMux.Handle("GET /{$}", cfg.UIHandler)
 		rootMux.Handle("GET /static/", cfg.UIHandler)
+	}
+	if cfg.WebhookHandler != nil {
+		rootMux.Handle("POST /webhooks/", cfg.WebhookHandler)
 	}
 	rootMux.Handle("/", s.authMiddleware(apiMux))
 

@@ -22,6 +22,7 @@ import (
 	"github.com/autox-my/mill/internal/mcp"
 	"github.com/autox-my/mill/internal/observer"
 	"github.com/autox-my/mill/internal/store"
+	"github.com/autox-my/mill/internal/webhooks"
 	"github.com/autox-my/mill/internal/webui"
 )
 
@@ -455,12 +456,20 @@ func cmdServe(dbPath string, args []string, _ io.Reader, stdout, stderr io.Write
 	}
 	defer st.Close()
 
+	whStore, err := webhooks.OpenDeliveryStore(dbPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: open webhook delivery store: %v\n", err)
+		return 1
+	}
+	defer whStore.Close()
+
 	srv := &http.Server{
 		Addr: *addr,
 		Handler: httpapi.NewHandlerWithConfig(httpapi.Config{
-			Store:     st,
-			APIToken:  token,
-			UIHandler: webui.Handler(),
+			Store:          st,
+			APIToken:       token,
+			UIHandler:      webui.Handler(),
+			WebhookHandler: webhooks.NewHandler(webhooks.LoadConfigFromEnv(st, whStore)),
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

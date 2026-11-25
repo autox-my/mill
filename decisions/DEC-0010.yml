@@ -1,0 +1,18 @@
+# DEC-0010: accept REQ-0010 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0010
+kind: accept
+claim_id: REQ-0010
+address: e65ba9fbec9bc142c830b2f43add2bdace3ca4d3ac5ad22eb9847c71b977d378
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0010 as written at this address: "The HTTP client shall authenticate requests with a Bearer token and round-trip slice, lease, run ledger, and stats operations against the HTTP API."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "e916105b3e4c6272ceac2165c2f5f3dd9abb72ee20e39f99a229e164f425f66a"
+hash: "f8f28828ca51803f2054c30e36f4ae31e2578aa79f828f6a4e39a2b6879d721a"

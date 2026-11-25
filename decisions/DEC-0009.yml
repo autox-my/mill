@@ -1,0 +1,18 @@
+# DEC-0009: accept REQ-0009 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0009
+kind: accept
+claim_id: REQ-0009
+address: 2f8945d1154f6f469522034f0637ef8fefef8cc291ef40ce25b161304f25c5ab
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0009 as written at this address: "The observer shall ground every Draft PR proposal in at least one exact slice_id from the analyzed run ledger and reject any proposal targeting claims/ or .intent/."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "d974d062292c67aedc796fb555177d42751aeaaafd43c127aa1688536d59565a"
+hash: "e916105b3e4c6272ceac2165c2f5f3dd9abb72ee20e39f99a229e164f425f66a"

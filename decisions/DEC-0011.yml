@@ -1,0 +1,18 @@
+# DEC-0011: accept REQ-0011 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0011
+kind: accept
+claim_id: REQ-0011
+address: 77b8c1f058ed80f86541ec4537c7de1bbf509aee36427de4c9a8adf788ff10e9
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0011 as written at this address: "The HTTP API shall authenticate browser sessions via constant-time cookie login and serve read-only observer reports only to authenticated callers."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "f8f28828ca51803f2054c30e36f4ae31e2578aa79f828f6a4e39a2b6879d721a"
+hash: "ab7dbc33943291fec10fa0f0c7b5b4c5451109b072676b07d63b70b68c7e94e7"

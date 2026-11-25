@@ -1,0 +1,8 @@
+# The trust anchor for Baselines (req ADR 0010). Public keys only; reviewed like code.
+keys:
+  - id: "req-baseline-1"
+    scheme: "minisign"
+    public_key: |
+      untrusted comment: minisign public key 645DD76950ED6ADF
+      RWTfau1QadddZOzVi8alyp5FpDVkqDdBP0RvwmPHt5j5s+MyxyEqIkVu
+    valid_from: "2026-11-25"

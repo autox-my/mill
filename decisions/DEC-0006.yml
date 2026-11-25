@@ -1,0 +1,18 @@
+# DEC-0006: accept REQ-0006 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0006
+kind: accept
+claim_id: REQ-0006
+address: 51c6db5eae468b548374850a611a22044aeedd535ca0323b01679308f126ebdd
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0006 as written at this address: "The MCP server shall expose create_slice, list_slices, claim_slice, renew_lease, update_slice, and record_run over stdio JSON-RPC 2.0 with standard protocol error codes and domain error reporting."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "a0e06aece735c4144d8cd507c720c5f9ade398f580b123270effe5f9812e9ec0"
+hash: "90afd004610b739b3c1036499e5794706ab709046d581f4e4e13ae6409ce8a64"

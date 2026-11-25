@@ -1,0 +1,18 @@
+# DEC-0002: accept REQ-0002 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0002
+kind: accept
+claim_id: REQ-0002
+address: afa8ae50db0b0078c0055bf7e4097efc0e03db2dbfbe49400c5d66defce2d684
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0002 as written at this address: "The store shall assign the lease to a new owner when claiming a slice whose prior lease has expired."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "98ad419f4c7c96f74832357127a6fa6df700c9741b30a2314849480e6ba8d12e"
+hash: "c536590fdb41052240e987f19865b65a4dd944621c42d869e5bbc854e576add6"

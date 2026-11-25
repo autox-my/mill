@@ -1,0 +1,18 @@
+# DEC-0001: accept REQ-0001 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0001
+kind: accept
+claim_id: REQ-0001
+address: d73c239ea7540e7d4684d017036c2d3f5a1ce47515d14f801c73161fe6aae2ee
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0001 as written at this address: "The store shall reject a claim on a slice with an active unexpired lease held by another owner without modifying the lease."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "req.genesis.v1"
+hash: "98ad419f4c7c96f74832357127a6fa6df700c9741b30a2314849480e6ba8d12e"

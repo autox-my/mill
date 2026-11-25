@@ -1,0 +1,18 @@
+# DEC-0005: accept REQ-0005 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0005
+kind: accept
+claim_id: REQ-0005
+address: e39147447dd929599d5fe4d14a4c82262772383cd95460fa4dd85730d8f01d74
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0005 as written at this address: "The store shall persist recorded run events in the run ledger and return them when queried by slice ID."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "2ad79be3bb2ba56c2db09c39de72ec38df8e7c39bffab520d0e8d745f898d309"
+hash: "a0e06aece735c4144d8cd507c720c5f9ade398f580b123270effe5f9812e9ec0"

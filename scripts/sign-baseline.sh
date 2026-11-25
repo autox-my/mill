@@ -55,4 +55,4 @@ req baseline --verify "$manifest" --key "$key_id"
 
 echo
 echo "Signed. Review and commit yourself:"
-echo "  git add baselines/ && git commit -m 'chore(baseline): sign $name' && git push origin main"
+echo "  git add baselines/ decisions/ && git commit -m 'chore(baseline): sign $name' && git push origin main"

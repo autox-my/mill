@@ -1,0 +1,18 @@
+# DEC-0008: accept REQ-0008 for the v0.1.0 Baseline.
+#
+# Drafted for human review. `prev_hash` and `hash` are deliberately absent:
+# only `req decision --fill` writes them (scripts/sign-baseline.sh runs it).
+id: DEC-0008
+kind: accept
+claim_id: REQ-0008
+address: 728edc4050954fd266ce1881f216b964ac8721a1769038c928c95b00f1d06f5e
+actor: fdx
+role: maintainer
+date: 2026-11-25
+note: >-
+  I accept REQ-0008 as written at this address: "The ingest package shall parse intentgate verify JSON, req diff, and scripts/check.sh outputs into validated RunEvent records and reject malformed inputs."
+  Proven by its linked passing tests at v0.1.0 completion.
+  Ratification is of the claim as it stands and asserts nothing about any other surface.
+  No dissent recorded.
+prev_hash: "8a8c3c5bb3b9d12faac670e785e2af31b04a0258b2bc0d2fb7493b4b2bcb809c"
+hash: "d974d062292c67aedc796fb555177d42751aeaaafd43c127aa1688536d59565a"

@@ -33,8 +33,8 @@ fi
 
 if need req; then
   step "req canon" req canon --fail-on-flag
-  # Once a human signs the first Baseline under baselines/, switch this to `req check` + `req baseline --verify`.
-  step "req gate" req gate --test-report build/junit.xml
+  step "req check" req check --test-report build/junit.xml
+  step "req baseline" req baseline --verify baselines/v0.1.0.json
 fi
 
 [ "$status" -eq 0 ] && echo "verdict: GREEN" || echo "verdict: RED"

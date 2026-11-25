@@ -34,7 +34,7 @@ fi
 if need req; then
   step "req canon" req canon --fail-on-flag
   step "req check" req check --test-report build/junit.xml
-  step "req baseline" req baseline --verify baselines/v0.1.0.json
+  step "req baseline" req baseline --verify baselines/v0.2.0.json
 fi
 
 [ "$status" -eq 0 ] && echo "verdict: GREEN" || echo "verdict: RED"

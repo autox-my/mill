@@ -32,10 +32,26 @@ jobs:
           } | tee build/ci-check.out
           exit "$status"
 
+      # Check whether Tailscale + mill ingest secrets are configured (secrets.* is disallowed in step if:).
+      - name: Check advisory mill ingest config
+        id: mill_env
+        if: always()
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET }}
+          MILL_URL: ${{ secrets.MILL_URL }}
+          MILL_API_TOKEN: ${{ secrets.MILL_API_TOKEN }}
+        run: |
+          if [ -n "$TS_OAUTH_CLIENT_ID" ] && [ -n "$TS_OAUTH_SECRET" ] && [ -n "$MILL_URL" ] && [ -n "$MILL_API_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # Optional advisory telemetry ingest into self-hosted mill over Tailscale.
       # Skipped automatically on forks or when Tailscale/mill secrets are unset.
       - name: Connect Tailscale (ephemeral CI node)
-        if: always() && secrets.TS_OAUTH_CLIENT_ID != '' && secrets.TS_OAUTH_SECRET != '' && secrets.MILL_URL != '' && secrets.MILL_API_TOKEN != ''
+        if: always() && steps.mill_env.outputs.enabled == 'true'
         continue-on-error: true
         uses: tailscale/github-action@v4
         with:
@@ -44,7 +60,7 @@ jobs:
           tags: tag:ci
 
       - name: Advisory ingest to mill
-        if: always() && secrets.TS_OAUTH_CLIENT_ID != '' && secrets.TS_OAUTH_SECRET != '' && secrets.MILL_URL != '' && secrets.MILL_API_TOKEN != ''
+        if: always() && steps.mill_env.outputs.enabled == 'true'
         continue-on-error: true
         env:
           MILL_URL: ${{ secrets.MILL_URL }}

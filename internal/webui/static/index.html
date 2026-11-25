@@ -62,6 +62,14 @@
         <span class="kpi-label">Footprint findings</span>
         <strong id="kpi-findings" class="kpi-value">0</strong>
       </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Avg cycle time</span>
+        <strong id="kpi-cycle-time" class="kpi-value">—</strong>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-label">Total spend</span>
+        <strong id="kpi-spend" class="kpi-value">$0.00</strong>
+      </div>
     </section>
 
     <section id="board-panel" class="panel" aria-label="Slice board">
@@ -127,6 +135,22 @@
             <tbody id="patterns-tbody"></tbody>
           </table>
         </div>
+      </div>
+      <div class="table-wrap telemetry-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Scope</th>
+              <th>Key</th>
+              <th class="num">Runs</th>
+              <th class="num">Green rate</th>
+              <th class="num">Avg dur</th>
+              <th class="num">Tokens</th>
+              <th class="num">Spend</th>
+            </tr>
+          </thead>
+          <tbody id="telemetry-tbody"></tbody>
+        </table>
       </div>
     </section>
   </div>

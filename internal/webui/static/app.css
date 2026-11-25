@@ -478,6 +478,10 @@ body {
   gap: 14px;
 }
 
+.telemetry-wrap {
+  margin-top: 14px;
+}
+
 dialog.drawer {
   margin: 0 0 0 auto;
   padding: 0;

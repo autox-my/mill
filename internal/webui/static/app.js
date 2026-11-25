@@ -127,13 +127,29 @@ function syncRepoOptions() {
   sel.value = repos.includes(prev) ? prev : "";
 }
 
+function formatDuration(sec) {
+  const s = Math.round(Number(sec) || 0);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+}
+
+function formatCost(usd) {
+  const n = Number(usd) || 0;
+  return `$${n.toFixed(n > 0 && n < 0.01 ? 4 : 2)}`;
+}
+
 function renderKPIs() {
-  const s = state.stats || { total_slices: 0, green_runs: 0, red_runs: 0, total_amendments: 0, total_findings: 0 };
+  const s = state.stats || { total_slices: 0, green_runs: 0, red_runs: 0, total_amendments: 0, total_findings: 0, total_cost_usd: 0, cycle_time: {} };
   el("kpi-slices").textContent = String(s.total_slices);
   const judged = s.green_runs + s.red_runs;
   el("kpi-pass-rate").textContent = judged > 0 ? `${Math.round((s.green_runs / judged) * 100)}%` : "—";
   el("kpi-amendments").textContent = String(s.total_amendments);
   el("kpi-findings").textContent = String(s.total_findings);
+  const ct = s.cycle_time || {};
+  el("kpi-cycle-time").textContent = ct.merged_count > 0 ? formatDuration(ct.avg_sec) : "—";
+  el("kpi-spend").textContent = formatCost(s.total_cost_usd);
 }
 
 function renderBoard() {
@@ -232,6 +248,7 @@ function renderLedger() {
 
 function renderHotspots() {
   const rep = state.report;
+  renderTelemetry(rep);
   const hBody = el("hotspots-tbody");
   const pBody = el("patterns-tbody");
   if (!rep || !rep.hotspots || rep.hotspots.length === 0) {
@@ -296,6 +313,40 @@ function renderHotspots() {
       })
     );
   }
+}
+
+function renderTelemetry(rep) {
+  const tbody = el("telemetry-tbody");
+  if (!tbody) return;
+  const src = rep && ((rep.by_model && rep.by_model.length) || (rep.by_harness && rep.by_harness.length)) ? rep : state.stats;
+  const rows = [];
+  const pushRows = (scope, list) => {
+    for (const item of list || []) {
+      const tr = node("tr");
+      tr.append(
+        node("td", "mono", scope),
+        node("td", "mono", item.key),
+        node("td", "num", item.runs),
+        node("td", "num", `${Math.round((item.green_rate || 0) * 100)}%`),
+        node("td", "num", formatDuration(item.avg_duration_s)),
+        node("td", "num", item.total_tokens || 0),
+        node("td", "num", formatCost(item.total_cost_usd))
+      );
+      rows.push(tr);
+    }
+  };
+  if (src) {
+    pushRows("model", src.by_model);
+    pushRows("harness", src.by_harness);
+  }
+  if (rows.length === 0) {
+    const tr = node("tr");
+    const td = node("td", "empty-note", "No model/harness telemetry recorded yet");
+    td.colSpan = 7;
+    tr.appendChild(td);
+    rows.push(tr);
+  }
+  tbody.replaceChildren(...rows);
 }
 
 async function openSliceDrawer(sl) {

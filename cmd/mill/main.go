@@ -323,6 +323,9 @@ func cmdRunRecord(dbPath string, args []string, stdout, stderr io.Writer) int {
 	phase := fs.String("phase", "", "sdls phase")
 	verdict := fs.String("verdict", "", "verdict")
 	duration := fs.Int("duration", 0, "duration seconds")
+	tokensIn := fs.Int("tokens-in", 0, "input tokens consumed")
+	tokensOut := fs.Int("tokens-out", 0, "output tokens generated")
+	costUSD := fs.Float64("cost-usd", 0, "run cost in USD")
 	amendments := fs.Int("amendments", 0, "amendment count")
 	findings := fs.Int("findings", 0, "footprint findings")
 	reqDiff := fs.String("req-diff", "", "req diff direction")
@@ -344,6 +347,9 @@ func cmdRunRecord(dbPath string, args []string, stdout, stderr io.Writer) int {
 		Phase:             *phase,
 		Verdict:           domain.Verdict(*verdict),
 		DurationSec:       *duration,
+		TokensIn:          *tokensIn,
+		TokensOut:         *tokensOut,
+		CostUSD:           *costUSD,
 		Amendments:        *amendments,
 		FootprintFindings: *findings,
 		ReqDiffDirection:  *reqDiff,
@@ -408,8 +414,9 @@ func cmdStats(dbPath string, args []string, stdout, stderr io.Writer) int {
 	if *asJSON {
 		return writeJSON(stdout, stderr, summary)
 	}
-	fmt.Fprintf(stdout, "slices: %d | runs: %d (GREEN=%d, RED=%d) | amendments: %d | findings: %d\n",
-		summary.TotalSlices, summary.TotalRuns, summary.GreenRuns, summary.RedRuns, summary.TotalAmendments, summary.TotalFindings)
+	fmt.Fprintf(stdout, "slices: %d | runs: %d (GREEN=%d, RED=%d) | amendments: %d | findings: %d | tokens: %d | cost=$%.4f | merged=%d avg_cycle=%.0fs\n",
+		summary.TotalSlices, summary.TotalRuns, summary.GreenRuns, summary.RedRuns, summary.TotalAmendments, summary.TotalFindings,
+		summary.TotalTokensIn+summary.TotalTokensOut, summary.TotalCostUSD, summary.CycleTime.MergedCount, summary.CycleTime.AvgSec)
 	return 0
 }
 

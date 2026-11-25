@@ -10,13 +10,18 @@ import (
 
 // Report summarizes run ledger failures, amendments, and footprint findings grounded in exact slice IDs.
 type Report struct {
-	TotalEvents            int              `json:"total_events"`
-	RedEvents              int              `json:"red_events"`
-	TotalAmendments        int              `json:"total_amendments"`
-	TotalFootprintFindings int              `json:"total_footprint_findings"`
-	SliceIDs               []string         `json:"slice_ids"`
-	Hotspots               []SliceSummary   `json:"hotspots"`
-	Patterns               []FailurePattern `json:"patterns"`
+	TotalEvents            int                         `json:"total_events"`
+	RedEvents              int                         `json:"red_events"`
+	TotalAmendments        int                         `json:"total_amendments"`
+	TotalFootprintFindings int                         `json:"total_footprint_findings"`
+	TotalTokens            int                         `json:"total_tokens"`
+	TotalCost              float64                     `json:"total_cost_usd"`
+	CycleTime              domain.CycleTimeStats       `json:"cycle_time"`
+	ByModel                []domain.TelemetryBreakdown `json:"by_model,omitempty"`
+	ByHarness              []domain.TelemetryBreakdown `json:"by_harness,omitempty"`
+	SliceIDs               []string                    `json:"slice_ids"`
+	Hotspots               []SliceSummary              `json:"hotspots"`
+	Patterns               []FailurePattern            `json:"patterns"`
 }
 
 // SliceSummary aggregates ledger metrics for a single slice.
@@ -69,6 +74,8 @@ func AnalyzeWithSlices(events []domain.RunEvent, sliceList []domain.Slice) Repor
 		}
 		rep.TotalAmendments += ev.Amendments
 		rep.TotalFootprintFindings += ev.FootprintFindings
+		rep.TotalTokens += ev.TokensIn + ev.TokensOut
+		rep.TotalCost += ev.CostUSD
 
 		acc := getOrCreateSliceAcc(bySlice, ev.SliceID, sliceMeta)
 		acc.add(ev)
@@ -78,6 +85,9 @@ func AnalyzeWithSlices(events []domain.RunEvent, sliceList []domain.Slice) Repor
 	rep.SliceIDs = sortedKeys(bySlice)
 	rep.Hotspots = buildHotspots(bySlice)
 	rep.Patterns = buildPatterns(byPattern)
+	rep.CycleTime = domain.ComputeCycleTime(sliceList)
+	rep.ByModel = domain.BuildTelemetryBreakdown(events, func(ev domain.RunEvent) string { return ev.Model })
+	rep.ByHarness = domain.BuildTelemetryBreakdown(events, func(ev domain.RunEvent) string { return ev.Harness })
 	return rep
 }
 

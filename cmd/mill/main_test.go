@@ -100,6 +100,9 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 		"--phase", "green",
 		"--verdict", "GREEN",
 		"--duration", "18",
+		"--tokens-in", "1200",
+		"--tokens-out", "300",
+		"--cost-usd", "0.06",
 		"--amendments", "1",
 		"--findings", "0",
 		"--req-diff", "none",
@@ -120,7 +123,7 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 		t.Fatalf("run list failed (%d): %s %s", code, out, errOut)
 	}
 	var runs []domain.RunEvent
-	if err := json.Unmarshal([]byte(out), &runs); err != nil || len(runs) != 1 {
+	if err := json.Unmarshal([]byte(out), &runs); err != nil || len(runs) != 1 || runs[0].TokensIn != 1200 || runs[0].CostUSD != 0.06 {
 		t.Fatalf("unexpected run list json: err=%v out=%s", err, out)
 	}
 
@@ -129,13 +132,13 @@ func TestCLI_EndToEndWorkflow(t *testing.T) {
 		t.Fatalf("stats failed (%d): %s %s", code, out, errOut)
 	}
 	var stats domain.StatsSummary
-	if err := json.Unmarshal([]byte(out), &stats); err != nil || stats.TotalSlices != 1 || stats.GreenRuns != 1 {
+	if err := json.Unmarshal([]byte(out), &stats); err != nil || stats.TotalSlices != 1 || stats.GreenRuns != 1 || stats.TotalTokensIn != 1200 {
 		t.Fatalf("unexpected stats json: err=%v out=%s", err, out)
 	}
 
 	// Text output smoke check.
 	code, out, errOut = runCLI(t, dbPath, "stats")
-	if code != 0 || !strings.Contains(out, "slices:") {
+	if code != 0 || !strings.Contains(out, "slices:") || !strings.Contains(out, "cost=$0.0600") {
 		t.Fatalf("stats text failed (%d): %s %s", code, out, errOut)
 	}
 

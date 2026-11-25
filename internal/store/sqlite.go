@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS slices (
 	lease_expires_at TEXT,
 	attempt INTEGER NOT NULL DEFAULT 0,
 	last_verdict TEXT NOT NULL DEFAULT 'pending',
+	risk TEXT NOT NULL DEFAULT 'low',
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );
@@ -94,7 +95,43 @@ func initDB(db *sql.DB) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
+	if err := ensureSliceRiskColumn(db); err != nil {
+		return fmt.Errorf("migrate slice risk: %w", err)
+	}
 	return nil
+}
+
+func ensureSliceRiskColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(slices)`)
+	if err != nil {
+		return err
+	}
+	hasRisk := false
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			colType string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &dflt, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == "risk" {
+			hasRisk = true
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if hasRisk {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE slices ADD COLUMN risk TEXT NOT NULL DEFAULT 'low'`)
+	return err
 }
 
 // Close closes the underlying SQLite handle.
@@ -116,6 +153,7 @@ func (s *Store) CreateSlice(ctx context.Context, sl domain.Slice) error {
 	if sl.LastVerdict == "" {
 		sl.LastVerdict = domain.VerdictPending
 	}
+	sl.Risk = domain.NormalizeRisk(sl.Risk)
 	now := time.Now().UTC()
 	if sl.CreatedAt.IsZero() {
 		sl.CreatedAt = now
@@ -128,12 +166,12 @@ func (s *Store) CreateSlice(ctx context.Context, sl domain.Slice) error {
 		return err
 	}
 	const q = `
-		INSERT INTO slices (id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		INSERT INTO slices (id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, risk, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = s.db.ExecContext(ctx, q,
 		sl.ID, sl.Repo, sl.Title, claimsJSON, sl.IntentLock, sl.Branch,
 		string(sl.State), sl.Owner, formatOptTime(sl.LeaseExpiresAt), sl.Attempt,
-		string(sl.LastVerdict), formatTime(sl.CreatedAt), formatTime(sl.UpdatedAt),
+		string(sl.LastVerdict), string(sl.Risk), formatTime(sl.CreatedAt), formatTime(sl.UpdatedAt),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -155,7 +193,7 @@ type queryRower interface {
 
 func getSliceTx(ctx context.Context, q queryRower, id string) (domain.Slice, error) {
 	const stmt = `
-		SELECT id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, created_at, updated_at
+		SELECT id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, risk, created_at, updated_at
 		FROM slices WHERE id = ?`
 	sl, err := scanSlice(q.QueryRowContext(ctx, stmt, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -170,7 +208,7 @@ func getSliceTx(ctx context.Context, q queryRower, id string) (domain.Slice, err
 // ListSlices returns slices ordered by creation time, optionally filtered by state.
 func (s *Store) ListSlices(ctx context.Context, stateFilter string) ([]domain.Slice, error) {
 	query := `
-		SELECT id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, created_at, updated_at
+		SELECT id, repo, title, claims_json, intent_lock, branch, state, owner, lease_expires_at, attempt, last_verdict, risk, created_at, updated_at
 		FROM slices`
 	var args []any
 	if strings.TrimSpace(stateFilter) != "" {
@@ -266,13 +304,27 @@ func (s *Store) RenewLease(ctx context.Context, id, owner string, ttl time.Durat
 	return updated, err
 }
 
-// UpdateSliceState transitions a slice to next state and optionally records a verdict.
-func (s *Store) UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, now time.Time) (domain.Slice, error) {
-	if !domain.ValidState(next) {
-		return domain.Slice{}, fmt.Errorf("%w: unknown state %q", domain.ErrInvalidInput, next)
+func validateSliceUpdate(next domain.SliceState, verdict domain.Verdict, risk domain.RiskLevel) error {
+	if next == "" && risk == "" {
+		return fmt.Errorf("%w: state or risk is required", domain.ErrInvalidInput)
+	}
+	if next != "" && !domain.ValidState(next) {
+		return fmt.Errorf("%w: unknown state %q", domain.ErrInvalidInput, next)
 	}
 	if verdict != "" && !domain.ValidVerdict(verdict) {
-		return domain.Slice{}, fmt.Errorf("%w: unknown verdict %q", domain.ErrInvalidInput, verdict)
+		return fmt.Errorf("%w: unknown verdict %q", domain.ErrInvalidInput, verdict)
+	}
+	if risk != "" && !domain.ValidRisk(risk) {
+		return fmt.Errorf("%w: unknown risk %q", domain.ErrInvalidInput, risk)
+	}
+	return nil
+}
+
+// UpdateSliceState transitions a slice to next state and optionally records a verdict and merge risk.
+// Merge risk is clamped to at least the deterministic floor implied by recorded run events.
+func (s *Store) UpdateSliceState(ctx context.Context, id string, next domain.SliceState, verdict domain.Verdict, risk domain.RiskLevel, now time.Time) (domain.Slice, error) {
+	if err := validateSliceUpdate(next, verdict, risk); err != nil {
+		return domain.Slice{}, err
 	}
 	nowUTC := normalizeTime(now)
 	var updated domain.Slice
@@ -282,17 +334,28 @@ func (s *Store) UpdateSliceState(ctx context.Context, id string, next domain.Sli
 		if err != nil {
 			return err
 		}
-		if !domain.ValidTransition(sl.State, next) {
-			return fmt.Errorf("%w: %s -> %s", domain.ErrInvalidTransition, sl.State, next)
+		if next != "" {
+			if !domain.ValidTransition(sl.State, next) {
+				return fmt.Errorf("%w: %s -> %s", domain.ErrInvalidTransition, sl.State, next)
+			}
+			sl.State = next
 		}
-		sl.State = next
 		if verdict != "" {
 			sl.LastVerdict = verdict
 		}
+		floor, err := sliceRiskFloorTx(ctx, tx, sl.ID)
+		if err != nil {
+			return err
+		}
+		candidate := sl.Risk
+		if risk != "" {
+			candidate = risk
+		}
+		sl.Risk = domain.MaxRisk(candidate, floor)
 		sl.UpdatedAt = nowUTC
 
-		const upd = `UPDATE slices SET state = ?, last_verdict = ?, updated_at = ? WHERE id = ?`
-		if _, err := tx.ExecContext(ctx, upd, string(sl.State), string(sl.LastVerdict), formatTime(sl.UpdatedAt), sl.ID); err != nil {
+		const upd = `UPDATE slices SET state = ?, last_verdict = ?, risk = ?, updated_at = ? WHERE id = ?`
+		if _, err := tx.ExecContext(ctx, upd, string(sl.State), string(sl.LastVerdict), string(sl.Risk), formatTime(sl.UpdatedAt), sl.ID); err != nil {
 			return fmt.Errorf("update slice state: %w", err)
 		}
 		updated = sl
@@ -301,7 +364,29 @@ func (s *Store) UpdateSliceState(ctx context.Context, id string, next domain.Sli
 	return updated, err
 }
 
-// RecordRun appends a run telemetry event for an existing slice.
+func sliceRiskFloorTx(ctx context.Context, tx *sql.Tx, sliceID string) (domain.RiskLevel, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT verdict, amendments, footprint_findings, req_diff_direction FROM run_events WHERE slice_id = ?`, sliceID)
+	if err != nil {
+		return domain.RiskLow, fmt.Errorf("query risk floor: %w", err)
+	}
+	defer rows.Close()
+
+	floor := domain.RiskLow
+	for rows.Next() {
+		var (
+			ev         domain.RunEvent
+			verdictStr string
+		)
+		if err := rows.Scan(&verdictStr, &ev.Amendments, &ev.FootprintFindings, &ev.ReqDiffDirection); err != nil {
+			return domain.RiskLow, fmt.Errorf("scan risk floor: %w", err)
+		}
+		ev.Verdict = domain.Verdict(verdictStr)
+		floor = domain.MaxRisk(floor, domain.RunRiskFloor(ev))
+	}
+	return floor, rows.Err()
+}
+
+// RecordRun appends a run telemetry event for an existing slice and enforces the deterministic risk floor.
 func (s *Store) RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEvent, error) {
 	if err := domain.ValidateRunEvent(ev); err != nil {
 		return domain.RunEvent{}, err
@@ -309,7 +394,8 @@ func (s *Store) RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEv
 	ev.CreatedAt = normalizeTime(ev.CreatedAt)
 
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		if _, err := getSliceTx(ctx, tx, ev.SliceID); err != nil {
+		sl, err := getSliceTx(ctx, tx, ev.SliceID)
+		if err != nil {
 			return err
 		}
 		const ins = `
@@ -328,6 +414,13 @@ func (s *Store) RecordRun(ctx context.Context, ev domain.RunEvent) (domain.RunEv
 			return fmt.Errorf("last insert id: %w", err)
 		}
 		ev.ID = id
+
+		newRisk := domain.MaxRisk(sl.Risk, domain.RunRiskFloor(ev))
+		if newRisk != sl.Risk {
+			if _, err := tx.ExecContext(ctx, `UPDATE slices SET risk = ?, updated_at = ? WHERE id = ?`, string(newRisk), formatTime(ev.CreatedAt), sl.ID); err != nil {
+				return fmt.Errorf("raise slice risk: %w", err)
+			}
+		}
 		return nil
 	})
 	return ev, err
@@ -442,19 +535,21 @@ func scanSlice(sc scanner) (domain.Slice, error) {
 		claimsJSON string
 		stateStr   string
 		verdictStr string
+		riskStr    string
 		leaseStr   sql.NullString
 		createdStr string
 		updatedStr string
 	)
 	err := sc.Scan(
 		&sl.ID, &sl.Repo, &sl.Title, &claimsJSON, &sl.IntentLock, &sl.Branch,
-		&stateStr, &sl.Owner, &leaseStr, &sl.Attempt, &verdictStr, &createdStr, &updatedStr,
+		&stateStr, &sl.Owner, &leaseStr, &sl.Attempt, &verdictStr, &riskStr, &createdStr, &updatedStr,
 	)
 	if err != nil {
 		return domain.Slice{}, err
 	}
 	sl.State = domain.SliceState(stateStr)
 	sl.LastVerdict = domain.Verdict(verdictStr)
+	sl.Risk = domain.NormalizeRisk(domain.RiskLevel(riskStr))
 	if err := json.Unmarshal([]byte(claimsJSON), &sl.Claims); err != nil {
 		return domain.Slice{}, fmt.Errorf("decode claims: %w", err)
 	}

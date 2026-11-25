@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/autox-my/mill/internal/domain"
+	_ "modernc.org/sqlite"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -157,14 +159,14 @@ func TestStore_UpdateSliceStateValidation(t *testing.T) {
 	now := time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC)
 
 	// Cannot jump directly from spec to merged.
-	if _, err := st.UpdateSliceState(context.Background(), "S-04", domain.StateMerged, domain.VerdictGreen, now); !errors.Is(err, domain.ErrInvalidTransition) {
+	if _, err := st.UpdateSliceState(context.Background(), "S-04", domain.StateMerged, domain.VerdictGreen, "", now); !errors.Is(err, domain.ErrInvalidTransition) {
 		t.Fatalf("spec->merged got %v, want ErrInvalidTransition", err)
 	}
 
 	if _, err := st.ClaimSlice(context.Background(), "S-04", "antigravity@mac", 30*time.Minute, now); err != nil {
 		t.Fatalf("ClaimSlice: %v", err)
 	}
-	sl, err := st.UpdateSliceState(context.Background(), "S-04", domain.StateRed, domain.VerdictRed, now.Add(time.Minute))
+	sl, err := st.UpdateSliceState(context.Background(), "S-04", domain.StateRed, domain.VerdictRed, "", now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("claimed->red: %v", err)
 	}
@@ -172,7 +174,7 @@ func TestStore_UpdateSliceStateValidation(t *testing.T) {
 		t.Fatalf("unexpected slice after red: %+v", sl)
 	}
 
-	sl, err = st.UpdateSliceState(context.Background(), "S-04", domain.StateGreen, domain.VerdictGreen, now.Add(2*time.Minute))
+	sl, err = st.UpdateSliceState(context.Background(), "S-04", domain.StateGreen, domain.VerdictGreen, "", now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("red->green: %v", err)
 	}
@@ -249,5 +251,143 @@ func TestStore_RunLedgerAndStats(t *testing.T) {
 	}
 	if summary.TotalSlices != 2 || summary.TotalRuns != 3 || summary.GreenRuns != 2 || summary.RedRuns != 1 || summary.TotalAmendments != 1 || summary.TotalFindings != 2 {
 		t.Fatalf("unexpected StatsSummary: %+v", summary)
+	}
+}
+
+// Proves REQ-0012: store idempotently migrates slices.risk and enforces deterministic risk floor.
+func TestStore_MergeRiskFloorAndMigration(t *testing.T) {
+	// 1. Legacy database without risk column migrates idempotently to default 'low'.
+	legacyPath := filepath.Join(t.TempDir(), "legacy.db")
+	rawDB, err := sql.Open("sqlite", legacyPath)
+	if err != nil {
+		t.Fatalf("sql.Open legacy: %v", err)
+	}
+	const legacySchema = `
+CREATE TABLE slices (
+	id TEXT PRIMARY KEY,
+	repo TEXT NOT NULL,
+	title TEXT NOT NULL,
+	claims_json TEXT NOT NULL DEFAULT '[]',
+	intent_lock TEXT NOT NULL DEFAULT '',
+	branch TEXT NOT NULL DEFAULT '',
+	state TEXT NOT NULL,
+	owner TEXT NOT NULL DEFAULT '',
+	lease_expires_at TEXT,
+	attempt INTEGER NOT NULL DEFAULT 0,
+	last_verdict TEXT NOT NULL DEFAULT 'pending',
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);`
+	if _, err := rawDB.Exec(legacySchema); err != nil {
+		t.Fatalf("exec legacy schema: %v", err)
+	}
+	nowStr := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC).Format(time.RFC3339Nano)
+	if _, err := rawDB.Exec(
+		`INSERT INTO slices (id, repo, title, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"S-OLD", "autox-my/mill", "Legacy slice", "spec", nowStr, nowStr,
+	); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	_ = rawDB.Close()
+
+	st1, err := Open(legacyPath)
+	if err != nil {
+		t.Fatalf("first Open(legacy): %v", err)
+	}
+	gotLegacy, err := st1.GetSlice(context.Background(), "S-OLD")
+	if err != nil || gotLegacy.Risk != domain.RiskLow {
+		t.Fatalf("legacy slice risk = %q (err=%v), want %q", gotLegacy.Risk, err, domain.RiskLow)
+	}
+	_ = st1.Close()
+
+	// Re-opening must be idempotent.
+	st2, err := Open(legacyPath)
+	if err != nil {
+		t.Fatalf("second Open(legacy): %v", err)
+	}
+	_ = st2.Close()
+
+	// 2. Fresh store: default risk, validation, and deterministic floor clamping.
+	st := openTestStore(t)
+	seedSlice(t, st, "S-RISK")
+	now := time.Date(2026, 11, 26, 10, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+
+	sl, err := st.GetSlice(ctx, "S-RISK")
+	if err != nil || sl.Risk != domain.RiskLow {
+		t.Fatalf("new slice risk = %q (err=%v), want low", sl.Risk, err)
+	}
+
+	if _, err := st.UpdateSliceState(ctx, "S-RISK", "", "", "", now); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("empty state and risk got %v, want ErrInvalidInput", err)
+	}
+	if _, err := st.UpdateSliceState(ctx, "S-RISK", "", "", "extreme", now); !errors.Is(err, domain.ErrInvalidInput) {
+		t.Fatalf("invalid risk got %v, want ErrInvalidInput", err)
+	}
+
+	// Risk-only update succeeds without state transition.
+	sl, err = st.UpdateSliceState(ctx, "S-RISK", "", "", domain.RiskMedium, now)
+	if err != nil || sl.Risk != domain.RiskMedium || sl.State != domain.StateSpec {
+		t.Fatalf("risk-only update got (%+v, %v), want state=spec risk=medium", sl, err)
+	}
+
+	// Lowering back to low succeeds when no run floor blocks it.
+	sl, err = st.UpdateSliceState(ctx, "S-RISK", "", "", domain.RiskLow, now.Add(time.Minute))
+	if err != nil || sl.Risk != domain.RiskLow {
+		t.Fatalf("lower risk without floor got (%+v, %v), want low", sl, err)
+	}
+
+	// Amendments > 0 raises floor to medium.
+	if _, err := st.RecordRun(ctx, domain.RunEvent{
+		SliceID:    "S-RISK",
+		Harness:    "codex",
+		Phase:      "verify",
+		Verdict:    domain.VerdictGreen,
+		Amendments: 1,
+	}); err != nil {
+		t.Fatalf("RecordRun amendments: %v", err)
+	}
+	sl, err = st.GetSlice(ctx, "S-RISK")
+	if err != nil || sl.Risk != domain.RiskMedium {
+		t.Fatalf("after amendments risk = %q (err=%v), want medium", sl.Risk, err)
+	}
+	// Attempting to lower to low is clamped to medium.
+	sl, err = st.UpdateSliceState(ctx, "S-RISK", "", "", domain.RiskLow, now.Add(2*time.Minute))
+	if err != nil || sl.Risk != domain.RiskMedium {
+		t.Fatalf("clamped risk = %q (err=%v), want medium", sl.Risk, err)
+	}
+	// Raising above floor to high is allowed.
+	sl, err = st.UpdateSliceState(ctx, "S-RISK", "", "", domain.RiskHigh, now.Add(3*time.Minute))
+	if err != nil || sl.Risk != domain.RiskHigh {
+		t.Fatalf("raise to high got (%+v, %v), want high", sl, err)
+	}
+
+	// Footprint findings or breaking/loosening req-diff enforces high floor.
+	seedSlice(t, st, "S-HIGH1")
+	if _, err := st.RecordRun(ctx, domain.RunEvent{
+		SliceID:           "S-HIGH1",
+		Harness:           "codex",
+		Phase:             "verify",
+		Verdict:           domain.VerdictGreen,
+		FootprintFindings: 1,
+	}); err != nil {
+		t.Fatalf("RecordRun findings: %v", err)
+	}
+	if sl, err := st.UpdateSliceState(ctx, "S-HIGH1", "", "", domain.RiskLow, now); err != nil || sl.Risk != domain.RiskHigh {
+		t.Fatalf("findings floor clamped = %q (err=%v), want high", sl.Risk, err)
+	}
+
+	seedSlice(t, st, "S-HIGH2")
+	if _, err := st.RecordRun(ctx, domain.RunEvent{
+		SliceID:          "S-HIGH2",
+		Harness:          "codex",
+		Phase:            "verify",
+		Verdict:          domain.VerdictGreen,
+		ReqDiffDirection: "breaking",
+	}); err != nil {
+		t.Fatalf("RecordRun breaking: %v", err)
+	}
+	if sl, err := st.UpdateSliceState(ctx, "S-HIGH2", "", "", domain.RiskMedium, now); err != nil || sl.Risk != domain.RiskHigh {
+		t.Fatalf("breaking floor clamped = %q (err=%v), want high", sl.Risk, err)
 	}
 }

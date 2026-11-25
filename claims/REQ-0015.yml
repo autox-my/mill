@@ -1,0 +1,15 @@
+schema: req.claim/4
+claim_id: REQ-0015
+statement: "The store shall persist optional run token and cost telemetry and compute cycle time and model breakdowns."
+applicability: []
+relations: []
+rationale:
+  source: "docs/handoffs/2026-11-26-s04-handoff.md"
+  date: 2026-11-26
+  rejected_alternatives: []
+  assumptions: []
+tests:
+  - "github.com/autox-my/mill/internal/domain::TestTelemetryAndCycleTime"
+  - "github.com/autox-my/mill/internal/store::TestStore_RunTelemetryMigrationAndStats"
+  - "github.com/autox-my/mill/internal/observer::TestAnalyze_TelemetryAndCycleTime"
+  - "github.com/autox-my/mill/internal/httpclient::TestHTTPClient_RoundTripAndErrors"
